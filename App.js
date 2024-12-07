@@ -1,11 +1,22 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
 
 export default function App() {
+  useEffect(() => {
+    // Splash screen'i otomatik gizlemeyi devre dışı bırak
+    SplashScreen.preventAutoHideAsync();
+
+    // Splash screen'i 3 saniye sonra gizle
+    setTimeout(async () => {
+      await SplashScreen.hideAsync();
+    }, 3000); // 3000ms = 3 saniye
+  }, []);
+
   return (
     <View style={styles.container}>
-      <Text>Open up App.js to start working on your app!</Text>
-      <StatusBar style="auto" />
+      <Text style={styles.title}> Welcome to Notella!</Text>
+      <Text style={styles.subtitle}> Kategorilere Göz At!</Text>
     </View>
   );
 }
@@ -13,8 +24,17 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fef08a',
   },
+  title: {
+    fontSize:32,
+    fontWeight:'bold',
+    color:'#333',
+  },
+  subtitle:{
+    fontSize:18,
+    color:'#666',
+  }
 });
