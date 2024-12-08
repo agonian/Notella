@@ -1,40 +1,34 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import * as SplashScreen from 'expo-splash-screen';
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createStackNavigator } from '@react-navigation/stack';
+import { createDrawerNavigator } from '@react-navigation/drawer';
+import HomeScreen from './screens/HomeScreen';
+import SubcategoriesScreen from './screens/SubcategoriesScreen';
+import NotesScreen from './screens/NotesScreen';
 
-export default function App() {
-  useEffect(() => {
-    // Splash screen'i otomatik gizlemeyi devre dışı bırak
-    SplashScreen.preventAutoHideAsync();
+// Drawer Navigator
+const Drawer = createDrawerNavigator();
 
-    // Splash screen'i 3 saniye sonra gizle
-    setTimeout(async () => {
-      await SplashScreen.hideAsync();
-    }, 3000); // 3000ms = 3 saniye
-  }, []);
+// Stack Navigator
+const Stack = createStackNavigator();
 
+// StackNavigator oluşturuyoruz
+function StackNavigator() {
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}> Welcome to Notella!</Text>
-      <Text style={styles.subtitle}> Kategorilere Göz At!</Text>
-    </View>
+    <Stack.Navigator>
+      <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Subcategories" component={SubcategoriesScreen} />
+      <Stack.Screen name="Notes" component={NotesScreen} />
+    </Stack.Navigator>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fef08a',
-  },
-  title: {
-    fontSize:32,
-    fontWeight:'bold',
-    color:'#333',
-  },
-  subtitle:{
-    fontSize:18,
-    color:'#666',
-  }
-});
+export default function App() {
+  return (
+    <NavigationContainer>
+      <Drawer.Navigator>
+        <Drawer.Screen name="Notella" component={StackNavigator} />
+      </Drawer.Navigator>
+    </NavigationContainer>
+  );
+}
