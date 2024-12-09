@@ -5,19 +5,36 @@ import { useLayoutEffect } from 'react';  // useLayoutEffect'ü buradan içe akt
 
 export default function SubcategoriesScreen({ route, navigation }) {
   const { category } = route.params;  // Parametre olarak gönderilen kategori
+  
+
+  // Geçersiz kategori kontrolü
+  if (!category) {
+    return (
+      <View style={styles.container}>
+        <Text>Geçersiz kategori seçimi!</Text>
+      </View>
+    );
+  }
+
+
+
  // Dinamik başlık ayarları
  useLayoutEffect(() => {
   navigation.setOptions({
     title: category.name,  // Kategorinin adını başlık olarak ayarla
   });
 }, [navigation, category.name]); // category.name her değiştiğinde başlığı güncelle
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{category.name} Alt Kategorileri</Text>
-      
-      {/* Alt kategorileri listeleme */}
+
+
+return (
+  <View style={styles.container}>
+    
+    {/* Alt kategorileri listeleme */}
+    {category.subcategories.length === 0 ? (
+      <Text style={styles.title}>Bu kategoriye ait alt kategoriler bulunamadı.</Text>
+    ) : (
       <FlatList
-        data={category.subcategories}  // Seçilen kategorinin alt kategorileri
+        data={category.subcategories}
         keyExtractor={(item) => item.id.toString()}
         renderItem={({ item }) => (
           <TouchableOpacity
@@ -28,10 +45,10 @@ export default function SubcategoriesScreen({ route, navigation }) {
           </TouchableOpacity>
         )}
       />
-    </View>
-  );
+    )}
+  </View>
+);
 }
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,

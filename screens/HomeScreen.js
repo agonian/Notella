@@ -4,18 +4,27 @@ import { View, Text, FlatList, TouchableOpacity, StyleSheet, Button } from 'reac
 // JSON verisini içe aktar
 const data = require('../data.json'); // JSON dosyasının doğru yolu
 
-export default function HomeScreen({ navigation }) {
+export default function HomeScreen({ navigation, route }) {
   const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState(null); // Seçili kategori
 
   useEffect(() => {
     // JSON verisini state'e al
     setCategories(data.categories);
-  }, []);
+
+    // Drawer'dan gelen veriyi al
+    if (route?.params?.categoryName) {
+      const category = data.categories.find(cat => cat.name === route.params.categoryName);
+      setSelectedCategory(category);
+    }
+  }, [route?.params]);
 
   return (
-    <View style={styles.container} >
+    <View style={styles.container}>
       <Text style={styles.title}>Hoş Geldiniz!</Text>
       <Text style={styles.subtitle}>Öğrenciler ve Öğretmenler İçin Notlar</Text>
+      
+
       
       {/* Öğrenci ve Öğretmen giriş butonları */}
       <View style={styles.buttonContainer}>
@@ -27,9 +36,9 @@ export default function HomeScreen({ navigation }) {
       
       {/* Kategorileri listeleme */}
       <FlatList
-        data={categories}  // JSON'dan alınan veriyi burada kullanıyoruz
+        data={categories}
         keyExtractor={(item) => item.id.toString()}
-        numColumns={2}  // Kategoriler iki sütunlu olacak
+        numColumns={2}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.categoryCard}

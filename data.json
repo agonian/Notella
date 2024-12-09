@@ -129,6 +129,26 @@
             ]
           }
         ]
+      },
+      {
+        "id": 5,
+        "name": "KPSS",
+        "subcategories": [
+          {
+            "id": 1,
+            "name": "Programlama",
+            "notes": [
+              
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Veri Tabanı",
+            "notes": [
+              
+            ]
+          }
+        ]
       }
     ]
   }
