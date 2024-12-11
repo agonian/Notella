@@ -1,11 +1,38 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Button } from 'react-native';
+import {db} from "../firebase/config"
+import {collection, addDoc, getFirestore, onSnapshot, updateDoc, getDocs, getDoc, setDoc, doc} from "firebase/firestore"
+
+
+
 
 // JSON verisini içe aktar
 const data = require('../data.json'); // JSON dosyasının doğru yolu
 
 export default function HomeScreen({ navigation }) {
-  const [categories, setCategories] = useState([]);
+const [categories, setCategories] = useState([]);
+const [income, setIncome] = useState("");
+const DataPipeline = doc(db,"Data","categories","mainCategories","mainCat1")
+const Yaz = ()=>{
+  console.log("yazdım")
+  updateDoc(DataPipeline,{
+    name: "KPSS"
+  })  
+}
+
+const Sil = ()=>{
+  console.log("sil");
+  updateDoc(DataPipeline,{
+    name: "KPTS"
+  })  
+}
+
+useEffect(()=>{
+  onSnapshot(DataPipeline,(doc)=>{
+    setIncome(doc.data())
+  })
+},[]);
+
 
   useEffect(() => {
     // JSON verisini state'e al
@@ -22,8 +49,12 @@ export default function HomeScreen({ navigation }) {
         <Button title="Öğrenci Girişi" onPress={() => alert("Öğrenci girişi")} />
         <Button title="Öğretmen Girişi" onPress={() => alert("Öğretmen girişi")} />
       </View>
+      <View style={styles.buttonContainer}>
+        <Button title="Yaz" onPress={Yaz} />
+        <Button title="Sil" onPress={Sil} />
+      </View>
 
-      <Text style={styles.categoryTitle}>Kategoriler</Text>
+      <Text style={styles.categoryTitle}>Kategoriler--- {income["name"]}</Text>
       
       {/* Kategorileri listeleme */}
       <FlatList
