@@ -23,11 +23,22 @@ function StackNavigator() {
   );
 }
 
+
+// StackNavigator oluşturuyoruz
+function StackNavigator2() {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
+    </Stack.Navigator>
+  );
+}
+
 export default function App() {
   return (
     <NavigationContainer>
       <Drawer.Navigator>
-        <Drawer.Screen name="Notella" component={StackNavigator} />
+        <Drawer.Screen name="Home" component={StackNavigator} />
+        <Drawer.Screen name="Kategoriler" component={StackNavigator2} />
       </Drawer.Navigator>
     </NavigationContainer>
   );
