@@ -2,10 +2,13 @@ import React, { useEffect, useState } from "react";
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
 import { db } from "../firebaseConfig/config";
 import { collection, getDocs } from "firebase/firestore";
+import { useNavigation } from '@react-navigation/native';
 
 export default function SubcategoryDetails({ route }) {
   const { categoryId, categoryName, mainCatName} = route.params; // Parametreleri alıyoruz
   const [subcategories, setSubcategories] = useState([]); // Alt kategoriler
+  const [ssubcategories, setSSubcategories] = useState([]); // Alt kategoriler
+  const navigation = useNavigation();
   const [loading, setLoading] = useState(true); // Yüklenme durumu
 
   useEffect(() => {
@@ -30,6 +33,21 @@ export default function SubcategoryDetails({ route }) {
 
     fetchSubcategories();
   }, [categoryName]);
+
+
+
+
+  const handleCategoryPress = (notecategory) => {
+    // Alt kategoriye tıklandığında yeni ekrana yönlendiriyoruz
+    console.log("Kategori id:", notecategory.id); // Kategori adını logla
+    console.log("Kategori name Tıklanmış:", notecategory.name); // Kategori adını logla
+    navigation.navigate("Notes", {
+      
+      categoryName: category.name,
+      mainCatName: categoryName
+    });
+  };
+
 
   const renderSubcategoryItem = ({ item }) => (
     <TouchableOpacity style={styles.subcategoryCard}>

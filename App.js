@@ -4,7 +4,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import HomeScreen from './screens/HomeScreen';
 import Categories from './screens/Categories';
-import NotesScreen from './screens/NotesScreen';
+import Notes from './screens/Notes';
 import SubcategoryDetails from './screens/SubcategoryDetails';
 import Subcategories from './screens/Subcategories';
 
@@ -30,7 +30,7 @@ function StackNavigator2() {
       <Stack.Screen name="Categories" component={Categories} options={{ headerShown: false }} />
       <Stack.Screen name="Subcategories" component={Subcategories} />
       <Stack.Screen name="SubcategoryDetails" component={SubcategoryDetails} />
-      <Stack.Screen name="Notes" component={NotesScreen} />
+      <Stack.Screen name="Notes" component={Notes} />
     </Stack.Navigator>
   );
 }

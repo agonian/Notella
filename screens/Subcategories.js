@@ -33,11 +33,14 @@ export default function Subcategories({ route }) {
     fetchCategories();
   }, [categoryName]);
 
-  const handleCategoryPress = (category) => {
+  const handleCategoryPress = (subcategory) => {
+    console.log("Kategori id:", subcategory.id); // Kategori adını logla
+    console.log("Kategori name Tıklanmış:", subcategory.name); // Kategori adını logla
+    
     // Alt kategoriye tıklandığında yeni ekrana yönlendiriyoruz
     navigation.navigate("SubcategoryDetails", {
-      categoryId: category.id,
-      categoryName: category.name,
+      categoryId: subcategory.id,
+      categoryName: subcategory.name,
       mainCatName: categoryName
     });
   };
