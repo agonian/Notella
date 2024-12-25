@@ -35,11 +35,23 @@ function StackNavigator2() {
   );
 }
 
+
+// StackNavigator oluşturuyoruz
+function StackNavigator2() {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
+    </Stack.Navigator>
+  );
+}
+
 export default function App() {
   return (
     <NavigationContainer>
+
       <Drawer.Navigator initialRouteName='Kategoriler'>
         <Drawer.Screen name="Notella" component={HomeStack} />
+
         <Drawer.Screen name="Kategoriler" component={StackNavigator2} />
       </Drawer.Navigator>
     </NavigationContainer>
