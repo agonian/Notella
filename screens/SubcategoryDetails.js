@@ -1,16 +1,17 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, SafeAreaView } from "react-native";
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { collection, onSnapshot } from '@firebase/firestore';
 import { db } from '../firebaseConfig/config';
 
-export default function SubcategoryDetails({ route }) {
-  const { categoryId, examId, examName } = route.params;
+export default function SubcategoryDetails() {
+  const navigation = useNavigation();
+  const route = useRoute();
+  const { categoryId, categoryName, examId, examName } = route.params;
   const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [navigatingId, setNavigatingId] = useState(null);
-  const navigation = useNavigation();
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -82,9 +83,27 @@ export default function SubcategoryDetails({ route }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{examName}</Text>
-        <Text style={styles.subtitle}>Konuları keşfedin</Text>
+      <View style={styles.breadcrumb}>
+        <TouchableOpacity 
+          style={styles.breadcrumbItem}
+          onPress={() => navigation.navigate('Categories')}
+        >
+          <MaterialIcons name="category" size={20} color="#4A90E2" />
+        </TouchableOpacity>
+        <MaterialIcons name="chevron-right" size={20} color="#95A5A6" />
+        <TouchableOpacity 
+          style={styles.breadcrumbItem}
+          onPress={() => navigation.goBack()}
+        >
+          <MaterialIcons name="folder" size={20} color="#4A90E2" />
+        </TouchableOpacity>
+        <MaterialIcons name="chevron-right" size={20} color="#95A5A6" />
+        <View style={styles.breadcrumbItem}>
+          <MaterialIcons name="description" size={20} color="#4A90E2" />
+          <Text style={[styles.breadcrumbText, styles.activeBreadcrumb]} numberOfLines={1}>
+            {examName}
+          </Text>
+        </View>
       </View>
 
       <FlatList
@@ -103,21 +122,29 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F6FA',
   },
-  header: {
-    padding: 20,
+  breadcrumb: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#FFFFFF',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E1E8ED',
+    flexWrap: 'wrap',
   },
-  title: {
-    fontSize: 28,
+  breadcrumbItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 4,
+  },
+  breadcrumbText: {
+    fontSize: 15,
+    color: '#4A90E2',
+    marginLeft: 6,
+    fontWeight: '500',
+  },
+  activeBreadcrumb: {
     fontWeight: 'bold',
-    color: '#2C3E50',
-    marginBottom: 5,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#7F8C8D',
   },
   listContainer: {
     padding: 15,

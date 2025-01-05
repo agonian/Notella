@@ -5,10 +5,10 @@ import { createDrawerNavigator } from '@react-navigation/drawer';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { auth } from './firebaseConfig/config';
 import { subscribeToAuthChanges, getCurrentUserRole, USER_ROLES, signOut } from './services/authService';
-import { ActivityIndicator, View, TouchableOpacity, Text } from 'react-native';
+import { ActivityIndicator, View, TouchableOpacity, Text, StatusBar, ScrollView, Image } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { DrawerItemList } from '@react-navigation/drawer';
 
-import HomeScreen from './screens/HomeScreen';
 import Categories from './screens/Categories';
 import Subcategories from './screens/Subcategories';
 import SubcategoryDetails from './screens/SubcategoryDetails';
@@ -16,44 +16,84 @@ import Notes from './screens/Notes';
 import AdminPanel from './screens/AdminPanel';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
+import ProfileScreen from './screens/ProfileScreen';
 
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 
-// Alt navigasyonlar için Stack Navigator
-function MainStack() {
+// Kategori ve alt sayfaları için Stack Navigator
+function CategoryStack() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator 
+      screenOptions={{ 
+        headerShown: false 
+      }}
+    >
       <Stack.Screen 
-        name="HomeScreen" 
-        component={HomeScreen}
-        options={{ title: 'Ana Sayfa' }}
-      />
-      <Stack.Screen 
-        name="CategoriesScreen" 
+        name="CategoriesMain" 
         component={Categories}
-        options={{ title: 'Kategoriler' }}
       />
       <Stack.Screen 
         name="Subcategories" 
         component={Subcategories}
-        options={{ title: 'Alt Kategoriler' }}
       />
       <Stack.Screen 
         name="SubcategoryDetails" 
         component={SubcategoryDetails}
-        options={{ title: 'Detaylar' }}
       />
       <Stack.Screen 
         name="Notes" 
         component={Notes}
-        options={{ title: 'Notlar' }}
       />
     </Stack.Navigator>
   );
 }
 
+// Yükleme ekranı komponenti
+function LoadingScreen() {
+  return (
+    <View style={{ 
+      flex: 1, 
+      justifyContent: 'center', 
+      alignItems: 'center',
+      backgroundColor: '#fff' 
+    }}>
+      <ActivityIndicator size="large" color="#4A90E2" />
+      <Text style={{ marginTop: 20, color: '#666', fontSize: 16 }}>
+        Yükleniyor...
+      </Text>
+    </View>
+  );
+}
+
 function CustomDrawerContent(props) {
+  const [userEmail, setUserEmail] = useState('');
+  const [userRole, setUserRole] = useState(null);
+
+  useEffect(() => {
+    const loadUserInfo = async () => {
+      if (auth.currentUser) {
+        setUserEmail(auth.currentUser.email);
+        const role = await getCurrentUserRole();
+        setUserRole(role);
+      }
+    };
+    loadUserInfo();
+  }, []);
+
+  const getRoleText = (role) => {
+    switch (role) {
+      case USER_ROLES.ADMIN:
+        return 'Yönetici';
+      case USER_ROLES.TEACHER:
+        return 'Öğretmen';
+      case USER_ROLES.USER:
+        return 'Öğrenci';
+      default:
+        return 'Bilinmeyen Rol';
+    }
+  };
+
   const handleLogout = async () => {
     try {
       await signOut();
@@ -64,9 +104,44 @@ function CustomDrawerContent(props) {
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flex: 1 }}>
-        {props.children}
+      <View style={{ 
+        padding: 16,
+        paddingTop: StatusBar.currentHeight + 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e1e1e1',
+        backgroundColor: '#4A90E2',
+      }}>
+        <View style={{ 
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginBottom: 10,
+        }}>
+          <MaterialIcons name="account-circle" size={50} color="#FFFFFF" />
+          <View style={{ marginLeft: 12, flex: 1 }}>
+            <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' }} numberOfLines={1}>{userEmail}</Text>
+            <View style={{ 
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              paddingVertical: 4,
+              paddingHorizontal: 8,
+              borderRadius: 12,
+              marginTop: 4,
+              alignSelf: 'flex-start'
+            }}>
+              <MaterialIcons 
+                name={userRole === USER_ROLES.ADMIN ? 'admin-panel-settings' : userRole === USER_ROLES.TEACHER ? 'school' : 'person'} 
+                size={16} 
+                color="#FFFFFF" 
+              />
+              <Text style={{ color: '#FFFFFF', marginLeft: 4, fontSize: 12 }}>{getRoleText(userRole)}</Text>
+            </View>
+          </View>
+        </View>
       </View>
+      <ScrollView style={{ flex: 1 }}>
+        <DrawerItemList {...props} />
+      </ScrollView>
       <TouchableOpacity 
         onPress={handleLogout}
         style={{
@@ -74,7 +149,8 @@ function CustomDrawerContent(props) {
           borderTopWidth: 1,
           borderTopColor: '#e1e1e1',
           flexDirection: 'row',
-          alignItems: 'center'
+          alignItems: 'center',
+          backgroundColor: '#fff',
         }}
       >
         <MaterialIcons name="logout" size={24} color="#E74C3C" />
@@ -86,35 +162,62 @@ function CustomDrawerContent(props) {
 
 function DrawerNavigator() {
   const [userRole, setUserRole] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const loadUserRole = async () => {
-      if (auth.currentUser) {
-        const role = await getCurrentUserRole();
-        setUserRole(role);
+      try {
+        if (auth.currentUser) {
+          const role = await getCurrentUserRole();
+          setUserRole(role);
+        }
+      } catch (error) {
+        console.error('Rol yükleme hatası:', error);
+      } finally {
+        setIsLoading(false);
       }
     };
     loadUserRole();
 
     const unsubscribe = subscribeToAuthChanges(async (user) => {
+      setIsLoading(true);
       if (user) {
         const role = await getCurrentUserRole();
         setUserRole(role);
       } else {
         setUserRole(null);
       }
+      setIsLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
+  const HeaderLogo = () => (
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <Image
+        source={require('./assets/icon.png')}
+        style={{ width: 30, height: 30, marginRight: 8, borderRadius: 15 }}
+        resizeMode="contain"
+      />
+      <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: 'bold' }}>Notella</Text>
+    </View>
+  );
+
   return (
     <Drawer.Navigator 
+      drawerContent={(props) => <CustomDrawerContent {...props} />}
       screenOptions={{
         headerStyle: {
           backgroundColor: '#4A90E2',
         },
         headerTintColor: '#fff',
+        headerTitle: (props) => <HeaderLogo {...props} />,
+        headerTitleAlign: 'center',
         headerTitleStyle: {
           fontWeight: 'bold',
         },
@@ -126,26 +229,8 @@ function DrawerNavigator() {
       }}
     >
       <Drawer.Screen 
-        name="MainStack" 
-        component={MainStack}
-        options={{ 
-          title: 'Ana Sayfa',
-          drawerIcon: ({ color, size }) => (
-            <MaterialIcons name="home" size={size} color={color} />
-          )
-        }}
-        listeners={({ navigation }) => ({
-          drawerItemPress: () => {
-            // Ana sayfaya dön
-            navigation.navigate('MainStack', {
-              screen: 'HomeScreen'
-            });
-          }
-        })}
-      />
-      <Drawer.Screen 
-        name="CategoriesDrawer" 
-        component={Categories}
+        name="Categories" 
+        component={CategoryStack}
         options={{ 
           title: 'Kategoriler',
           drawerIcon: ({ color, size }) => (
@@ -153,26 +238,16 @@ function DrawerNavigator() {
           )
         }}
       />
-      {userRole === USER_ROLES.TEACHER || userRole === USER_ROLES.ADMIN ? (
-        <Drawer.Screen 
-          name="NotesManagement" 
-          component={MainStack}
-          options={{ 
-            title: 'Not Yönetimi',
-            drawerIcon: ({ color, size }) => (
-              <MaterialIcons name="edit" size={size} color={color} />
-            )
-          }}
-          listeners={({ navigation }) => ({
-            drawerItemPress: () => {
-              // Not yönetimi sayfasına git
-              navigation.navigate('MainStack', {
-                screen: 'NotesManagement'
-              });
-            }
-          })}
-        />
-      ) : null}
+      <Drawer.Screen 
+        name="Profile" 
+        component={ProfileScreen}
+        options={{ 
+          title: 'Profilim',
+          drawerIcon: ({ color, size }) => (
+            <MaterialIcons name="person" size={size} color={color} />
+          )
+        }}
+      />
       {userRole === USER_ROLES.ADMIN && (
         <Drawer.Screen 
           name="AdminPanel" 
@@ -185,33 +260,9 @@ function DrawerNavigator() {
           }}
         />
       )}
-      <Drawer.Screen 
-        name="Logout"
-        component={EmptyComponent}
-        options={{
-          title: 'Çıkış Yap',
-          drawerIcon: ({ color, size }) => (
-            <MaterialIcons name="logout" size={size} color="#E74C3C" />
-          ),
-          drawerItemStyle: { marginTop: 'auto' },
-          drawerLabelStyle: { color: '#E74C3C' }
-        }}
-        listeners={({ navigation }) => ({
-          drawerItemPress: async () => {
-            try {
-              await signOut();
-            } catch (error) {
-              console.error('Çıkış hatası:', error);
-            }
-          },
-        })}
-      />
     </Drawer.Navigator>
   );
 }
-
-// Boş bileşen (Çıkış butonu için)
-const EmptyComponent = () => null;
 
 export default function App() {
   const [user, setUser] = useState(null);

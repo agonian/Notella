@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, StatusBar, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, StatusBar, ActivityIndicator, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -100,6 +100,14 @@ export default function HomeScreen() {
         end={{ x: 1, y: 1 }}
         style={styles.gradient}
       >
+        <View style={styles.header}>
+          <Image
+            source={require('../assets/icon.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Text style={styles.appName}>Notella</Text>
+        </View>
         <View style={styles.contentContainer}>
           <View style={styles.userInfoContainer}>
             <MaterialIcons name="account-circle" size={50} color="#FFFFFF" />
@@ -143,10 +151,30 @@ const styles = StyleSheet.create({
   gradient: {
     flex: 1,
   },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: StatusBar.currentHeight + 16,
+    paddingBottom: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  logo: {
+    width: 40,
+    height: 40,
+    marginRight: 10,
+    borderRadius: 20,
+  },
+  appName: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    letterSpacing: 1,
+  },
   contentContainer: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 60,
+    paddingTop: 20,
   },
   userInfoContainer: {
     alignItems: 'center',

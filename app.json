@@ -19,10 +19,25 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.agonian.Notella"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "9964dc59-3fd5-48be-9f4e-b5a362385cdd"
+      }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Notella uygulaması profil fotoğrafınızı seçmek için fotoğraflarınıza erişmek istiyor.",
+          "cameraPermission": "Notella uygulaması profil fotoğrafı çekmek için kameraya erişmek istiyor."
+        }
+      ]
+    ]
   }
 }
