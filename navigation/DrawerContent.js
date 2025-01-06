@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StatusBar, ScrollView, Image } from 'react-native';
+import { View, Text, TouchableOpacity, StatusBar, ScrollView, Image, Alert } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { DrawerItemList } from '@react-navigation/drawer';
 import { auth } from '../firebaseConfig/config';
@@ -46,6 +46,10 @@ export default function CustomDrawerContent(props) {
       await signOut();
     } catch (error) {
       console.error('Çıkış hatası:', error);
+      Alert.alert(
+        'Hata',
+        'Çıkış yapılırken bir hata oluştu. Lütfen tekrar deneyin.'
+      );
     }
   };
 

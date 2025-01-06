@@ -1,0 +1,5 @@
+[33m883d9e0[m[33m ([m[1;36mHEAD -> [m[1;32mmain[m[33m, [m[1;33mtag: v1.0.7[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m feat: Kategori arama ve not ekleme işlemleri iyileştirildi, performans optimizasyonları yapıldı
+[33mc5cfde7[m[33m ([m[1;33mtag: v1.0.6[m[33m)[m UI improvements and navigation updates: Added header logo, fixed drawer menu overlap, improved breadcrumb navigation, enhanced category display, and cleaned up unused files
+[33m5529863[m[33m ([m[1;33mtag: v1.0.5[m[33m, [m[1;32mtest-v1.0.5[m[33m)[m Kullanıcı rolleri ve navigasyon yapısı eklendi: - Öğrenci, öğretmen ve admin rolleri eklendi - Drawer menü ve navigasyon yapısı iyileştirildi - Firebase entegrasyonu güncellendi - Rol bazlı erişim kontrolleri eklendi
+[33m74beaa3[m[33m ([m[1;33mtag: v1.0.4[m[33m)[m Merge pull request #2 from agonian/v1.0.4
+[33m58d5b80[m Merge branch 'main' into v1.0.4

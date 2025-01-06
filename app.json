@@ -2,7 +2,7 @@
   "expo": {
     "name": "Notella",
     "slug": "Notella",
-    "version": "1.0.0",
+    "version": "1.0.7",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -20,7 +20,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.agonian.Notella"
+      "package": "com.agonian.Notella",
+      "versionCode": 7
     },
     "web": {
       "favicon": "./assets/favicon.png"

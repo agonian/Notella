@@ -40,6 +40,7 @@ export const signIn = async (email, password) => {
 export const signOut = async () => {
   try {
     await firebaseSignOut(auth);
+    // Çıkış başarılı, auth state değişecek ve App.js'deki callback tetiklenecek
   } catch (error) {
     console.error('Çıkış hatası:', error);
     throw error;
@@ -121,7 +122,14 @@ export const hasPermission = async (requiredRole) => {
 
 // Auth durumu değişikliklerini dinle
 export const subscribeToAuthChanges = (callback) => {
-  return onAuthStateChanged(auth, callback);
+  return onAuthStateChanged(auth, (user) => {
+    if (user) {
+      console.log('Kullanıcı oturum açtı:', { userId: user.uid });
+    } else {
+      console.log('Kullanıcı oturumu kapandı');
+    }
+    callback(user);
+  });
 };
 
 export const subscribeToUserData = (userId, callback) => {
