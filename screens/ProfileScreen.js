@@ -5,94 +5,107 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
-  ScrollView,
-  ActivityIndicator,
-  SafeAreaView,
   Alert,
+  ActivityIndicator,
+  ScrollView,
+  TextInput,
+  Modal
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { auth, db } from '../firebaseConfig/config';
-import { getCurrentUserRole } from '../services/authService';
-import { LinearGradient } from 'expo-linear-gradient';
+import { doc, getDoc, updateDoc, collection, query, where, getDocs } from '@firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 
 export default function ProfileScreen() {
-  const [userInfo, setUserInfo] = useState({
-    name: '',
-    email: '',
-    role: '',
-    joinDate: '',
-    profileImage: null,
-  });
-  const [stats, setStats] = useState({
-    totalNotes: 0,
-    totalCategories: 0,
-    studyTime: '0',
-    lastActive: '',
-  });
   const [loading, setLoading] = useState(true);
+  const [userInfo, setUserInfo] = useState(null);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingUsername, setEditingUsername] = useState('');
+  const [savingChanges, setSavingChanges] = useState(false);
+  const [usernameAvailable, setUsernameAvailable] = useState(true);
+  const [checkingUsername, setCheckingUsername] = useState(false);
 
   useEffect(() => {
     loadUserInfo();
-    loadUserStats();
   }, []);
 
   const loadUserInfo = async () => {
     try {
-      const user = auth.currentUser;
-      if (user) {
-        const role = await getCurrentUserRole();
-        const joinDate = new Date(user.metadata.creationTime).toLocaleDateString('tr-TR');
-        
-        setUserInfo({
-          name: user.displayName || user.email.split('@')[0],
-          email: user.email,
-          role: role,
-          joinDate: joinDate,
-          profileImage: user.photoURL,
-        });
+      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+      if (userDoc.exists()) {
+        setUserInfo(userDoc.data());
       }
     } catch (error) {
       console.error('Kullanıcı bilgileri yüklenirken hata:', error);
-    }
-  };
-
-  const loadUserStats = async () => {
-    try {
-      // Not: Bu değerler şu an için örnek verilerdir.
-      // İleride Firebase entegrasyonu ile gerçek veriler gösterilecektir.
-      setStats({
-        totalNotes: 0,           // Kullanıcının toplam not sayısı
-        totalCategories: 0,      // Erişilebilir kategori sayısı
-        studyTime: '0 saat',     // Toplam çalışma süresi
-        lastActive: new Date().toLocaleDateString('tr-TR'), // Son giriş tarihi
-      });
-    } catch (error) {
-      console.error('İstatistikler yüklenirken hata:', error);
+      Alert.alert('Hata', 'Kullanıcı bilgileri yüklenemedi.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleImagePick = async () => {
-    Alert.alert(
-      'Bilgi',
-      'Profil fotoğrafı değiştirme özelliği şu an için kullanılamıyor.',
-      [{ text: 'Tamam', style: 'default' }]
-    );
+  const checkUsername = async (username) => {
+    if (!username || username.trim() === userInfo?.username) {
+      setUsernameAvailable(true);
+      return;
+    }
+
+    setCheckingUsername(true);
+    try {
+      const q = query(collection(db, 'users'), where('username', '==', username.trim()));
+      const querySnapshot = await getDocs(q);
+      setUsernameAvailable(querySnapshot.empty);
+    } catch (error) {
+      console.error('Username kontrol hatası:', error);
+    } finally {
+      setCheckingUsername(false);
+    }
   };
 
-  const getRoleText = (role) => {
-    switch (role) {
-      case 'admin':
-        return 'Yönetici';
-      case 'teacher':
-        return 'Öğretmen';
-      case 'user':
-        return 'Öğrenci';
-      default:
-        return 'Kullanıcı';
+  const handleEditProfile = () => {
+    setEditingUsername(userInfo?.username || '');
+    setUsernameAvailable(true);
+    setEditModalVisible(true);
+  };
+
+  const handleSaveChanges = async () => {
+    if (!editingUsername.trim()) {
+      Alert.alert('Uyarı', 'Kullanıcı adı boş olamaz.');
+      return;
     }
+
+    if (!usernameAvailable) {
+      Alert.alert('Uyarı', 'Bu kullanıcı adı zaten kullanımda.');
+      return;
+    }
+
+    setSavingChanges(true);
+    try {
+      const userRef = doc(db, 'users', auth.currentUser.uid);
+      await updateDoc(userRef, {
+        username: editingUsername.trim()
+      });
+      
+      setUserInfo(prev => ({
+        ...prev,
+        username: editingUsername.trim()
+      }));
+      
+      setEditModalVisible(false);
+      Alert.alert('Başarılı', 'Profil bilgileriniz güncellendi.');
+    } catch (error) {
+      console.error('Profil güncelleme hatası:', error);
+      Alert.alert('Hata', 'Profil güncellenirken bir hata oluştu.');
+    } finally {
+      setSavingChanges(false);
+    }
+  };
+
+  const handleImagePick = async () => {
+    Alert.alert(
+      'Profil Fotoğrafı',
+      'Bu özellik şu anda geliştirme aşamasındadır.',
+      [{ text: 'Tamam', style: 'default' }]
+    );
   };
 
   if (loading) {
@@ -104,80 +117,107 @@ export default function ProfileScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <LinearGradient
-          colors={['#4A90E2', '#50C878']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.header}
-        >
-          <TouchableOpacity onPress={handleImagePick} style={styles.profileImageContainer}>
-            {userInfo.profileImage ? (
-              <Image source={{ uri: userInfo.profileImage }} style={styles.profileImage} />
-            ) : (
-              <View style={styles.profileImagePlaceholder}>
-                <MaterialIcons name="person" size={40} color="#FFFFFF" />
-              </View>
-            )}
+    <ScrollView style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={handleImagePick} style={styles.avatarContainer}>
+          <View style={styles.avatar}>
+            <MaterialIcons name="account-circle" size={80} color="#4A90E2" />
             <View style={styles.editIconContainer}>
-              <MaterialIcons name="edit" size={16} color="#FFFFFF" />
-            </View>
-          </TouchableOpacity>
-          
-          <Text style={styles.name}>{userInfo.name}</Text>
-          <View style={styles.roleBadge}>
-            <MaterialIcons 
-              name={userInfo.role === 'admin' ? 'admin-panel-settings' : 'person'} 
-              size={16} 
-              color="#FFFFFF" 
-            />
-            <Text style={styles.roleText}>{getRoleText(userInfo.role)}</Text>
-          </View>
-        </LinearGradient>
-
-        <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <MaterialIcons name="note" size={24} color="#4A90E2" />
-            <Text style={styles.statNumber}>{stats.totalNotes}</Text>
-            <Text style={styles.statLabel}>Not</Text>
-          </View>
-          <View style={styles.statCard}>
-            <MaterialIcons name="category" size={24} color="#50C878" />
-            <Text style={styles.statNumber}>{stats.totalCategories}</Text>
-            <Text style={styles.statLabel}>Kategori</Text>
-          </View>
-          <View style={styles.statCard}>
-            <MaterialIcons name="timer" size={24} color="#E74C3C" />
-            <Text style={styles.statNumber}>{stats.studyTime}</Text>
-            <Text style={styles.statLabel}>Çalışma</Text>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Hesap Bilgileri</Text>
-          <View style={styles.infoCard}>
-            <View style={styles.infoRow}>
-              <MaterialIcons name="email" size={20} color="#4A90E2" />
-              <Text style={styles.infoText}>{userInfo.email}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <MaterialIcons name="calendar-today" size={20} color="#4A90E2" />
-              <Text style={styles.infoText}>Katılım: {userInfo.joinDate}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <MaterialIcons name="access-time" size={20} color="#4A90E2" />
-              <Text style={styles.infoText}>Son Giriş: {stats.lastActive}</Text>
+              <MaterialIcons name="photo-camera" size={20} color="#FFFFFF" />
             </View>
           </View>
-        </View>
-
-        <TouchableOpacity style={styles.editButton}>
+        </TouchableOpacity>
+        
+        <Text style={styles.username}>{userInfo?.username || 'Kullanıcı'}</Text>
+        <Text style={styles.email}>{auth.currentUser?.email}</Text>
+        
+        <TouchableOpacity style={styles.editButton} onPress={handleEditProfile}>
           <MaterialIcons name="edit" size={20} color="#FFFFFF" />
           <Text style={styles.editButtonText}>Profili Düzenle</Text>
         </TouchableOpacity>
-      </ScrollView>
-    </SafeAreaView>
+      </View>
+
+      <View style={styles.statsContainer}>
+        <View style={styles.statItem}>
+          <MaterialIcons name="note" size={24} color="#4A90E2" />
+          <Text style={styles.statValue}>24</Text>
+          <Text style={styles.statLabel}>Not</Text>
+        </View>
+        <View style={styles.statItem}>
+          <MaterialIcons name="folder" size={24} color="#4A90E2" />
+          <Text style={styles.statValue}>8</Text>
+          <Text style={styles.statLabel}>Kategori</Text>
+        </View>
+        <View style={styles.statItem}>
+          <MaterialIcons name="access-time" size={24} color="#4A90E2" />
+          <Text style={styles.statValue}>3 saat</Text>
+          <Text style={styles.statLabel}>Çalışma</Text>
+        </View>
+      </View>
+
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={editModalVisible}
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Profili Düzenle</Text>
+            
+            <View style={styles.inputContainer}>
+              <MaterialIcons name="person" size={24} color="#95A5A6" />
+              <TextInput
+                style={styles.input}
+                placeholder="Kullanıcı Adı"
+                value={editingUsername}
+                onChangeText={(text) => {
+                  setEditingUsername(text);
+                  checkUsername(text);
+                }}
+                autoCapitalize="none"
+              />
+              {checkingUsername ? (
+                <ActivityIndicator size="small" color="#4A90E2" />
+              ) : editingUsername.trim() !== userInfo?.username && (
+                <MaterialIcons 
+                  name={usernameAvailable ? "check-circle" : "error"} 
+                  size={24} 
+                  color={usernameAvailable ? "#27AE60" : "#E74C3C"} 
+                />
+              )}
+            </View>
+            {editingUsername.trim() !== userInfo?.username && !usernameAvailable && (
+              <Text style={styles.usernameError}>
+                Bu kullanıcı adı zaten kullanımda
+              </Text>
+            )}
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setEditModalVisible(false)}
+                disabled={savingChanges}
+              >
+                <Text style={styles.cancelButtonText}>İptal</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.saveButton]}
+                onPress={handleSaveChanges}
+                disabled={savingChanges || !usernameAvailable}
+              >
+                {savingChanges ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Kaydet</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </ScrollView>
   );
 }
 
@@ -192,141 +232,148 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   header: {
+    backgroundColor: '#FFFFFF',
     padding: 20,
     alignItems: 'center',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E1E8ED',
   },
-  profileImageContainer: {
+  avatarContainer: {
+    marginBottom: 16,
+  },
+  avatar: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    marginBottom: 16,
-  },
-  profileImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 50,
-  },
-  profileImagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 50,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: '#F5F6FA',
     justifyContent: 'center',
     alignItems: 'center',
   },
   editIconContainer: {
     position: 'absolute',
-    right: 0,
     bottom: 0,
+    right: 0,
     backgroundColor: '#4A90E2',
+    borderRadius: 15,
     width: 30,
     height: 30,
-    borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
   },
-  name: {
+  username: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 8,
+    color: '#2C3E50',
+    marginBottom: 4,
   },
-  roleBadge: {
+  email: {
+    fontSize: 16,
+    color: '#7F8C8D',
+    marginBottom: 16,
+  },
+  editButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 15,
+    backgroundColor: '#4A90E2',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
   },
-  roleText: {
+  editButtonText: {
     color: '#FFFFFF',
-    marginLeft: 6,
-    fontSize: 14,
+    marginLeft: 8,
+    fontSize: 16,
     fontWeight: '500',
   },
   statsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    padding: 16,
-    marginTop: -30,
-  },
-  statCard: {
-    flex: 1,
+    justifyContent: 'space-around',
+    padding: 20,
     backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginHorizontal: 4,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    marginTop: 12,
   },
-  statNumber: {
-    fontSize: 18,
+  statItem: {
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#2C3E50',
     marginTop: 8,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#7F8C8D',
     marginTop: 4,
   },
-  section: {
-    padding: 16,
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
-  sectionTitle: {
-    fontSize: 18,
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 20,
+    width: '90%',
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#2C3E50',
-    marginBottom: 12,
+    marginBottom: 20,
+    textAlign: 'center',
   },
-  infoCard: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  infoRow: {
+  inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    backgroundColor: '#F5F6FA',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    marginBottom: 20,
   },
-  infoText: {
+  input: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     fontSize: 16,
     color: '#2C3E50',
-    marginLeft: 12,
   },
-  editButton: {
+  modalButtons: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#4A90E2',
-    margin: 16,
-    padding: 16,
-    borderRadius: 12,
+    justifyContent: 'space-between',
   },
-  editButtonText: {
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#F5F6FA',
+    marginRight: 8,
+  },
+  saveButton: {
+    backgroundColor: '#4A90E2',
+    marginLeft: 8,
+  },
+  cancelButtonText: {
+    color: '#7F8C8D',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  saveButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
-    marginLeft: 8,
+  },
+  usernameError: {
+    color: '#E74C3C',
+    fontSize: 12,
+    marginTop: -16,
+    marginBottom: 16,
+    marginLeft: 4,
   },
 }); 

@@ -5,154 +5,187 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   Alert,
-  ScrollView,
+  ActivityIndicator
 } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
-import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
-import { createUserWithRole, USER_ROLES } from '../services/authService';
+import { auth, db } from '../firebaseConfig/config';
+import { createUserWithEmailAndPassword } from '@firebase/auth';
+import { doc, setDoc, collection, query, where, getDocs } from '@firebase/firestore';
 
 export default function RegisterScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [role, setRole] = useState(USER_ROLES.USER);
+  const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
+  const [usernameAvailable, setUsernameAvailable] = useState(null);
+  const [checkingUsername, setCheckingUsername] = useState(false);
+
+  // Username kontrolü
+  const checkUsername = async (username) => {
+    if (!username || username.length < 3) {
+      setUsernameAvailable(null);
+      return;
+    }
+
+    setCheckingUsername(true);
+    try {
+      const q = query(collection(db, 'users'), where('username', '==', username));
+      const querySnapshot = await getDocs(q);
+      setUsernameAvailable(querySnapshot.empty);
+    } catch (error) {
+      console.error('Username kontrol hatası:', error);
+    } finally {
+      setCheckingUsername(false);
+    }
+  };
 
   const handleRegister = async () => {
-    if (!email || !password || !confirmPassword) {
-      Alert.alert('Hata', 'Lütfen tüm alanları doldurun.');
+    if (!email || !password || !username) {
+      Alert.alert('Uyarı', 'Lütfen tüm alanları doldurun.');
       return;
     }
 
-    if (password !== confirmPassword) {
-      Alert.alert('Hata', 'Şifreler eşleşmiyor.');
+    if (!usernameAvailable) {
+      Alert.alert('Uyarı', 'Bu kullanıcı adı zaten kullanımda.');
       return;
     }
 
+    setLoading(true);
     try {
-      setLoading(true);
-      await createUserWithRole(email, password, role);
-      Alert.alert('Başarılı', 'Hesabınız oluşturuldu. Giriş yapabilirsiniz.');
-      navigation.replace('Login');
+      const { user } = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // Kullanıcı bilgilerini Firestore'a kaydet
+      await setDoc(doc(db, 'users', user.uid), {
+        email: email,
+        username: username,
+        role: 'user',
+        createdAt: new Date(),
+      });
+
+      Alert.alert('Başarılı', 'Kayıt işlemi tamamlandı.');
     } catch (error) {
       console.error('Kayıt hatası:', error);
-      Alert.alert('Hata', error.message);
+      Alert.alert('Hata', 'Kayıt işlemi sırasında bir hata oluştu.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <LinearGradient
-        colors={['#4A90E2', '#50C878']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.gradient}
-      >
-        <View style={styles.formContainer}>
-          <Text style={styles.title}>Kayıt Ol</Text>
+    <View style={styles.container}>
+      <View style={styles.formContainer}>
+        <Text style={styles.title}>Kayıt Ol</Text>
 
-          <View style={styles.inputContainer}>
-            <MaterialIcons name="email" size={24} color="#7F8C8D" style={styles.icon} />
-            <TextInput
-              style={styles.input}
-              placeholder="E-posta"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
+        {/* Username Input */}
+        <View style={styles.inputContainer}>
+          <MaterialIcons name="person" size={24} color="#95A5A6" />
+          <TextInput
+            style={styles.input}
+            placeholder="Kullanıcı Adı"
+            value={username}
+            onChangeText={(text) => {
+              setUsername(text);
+              checkUsername(text);
+            }}
+          />
+          {checkingUsername ? (
+            <ActivityIndicator size="small" color="#4A90E2" />
+          ) : username.length >= 3 && (
+            <MaterialIcons 
+              name={usernameAvailable ? "check-circle" : "error"} 
+              size={24} 
+              color={usernameAvailable ? "#27AE60" : "#E74C3C"} 
             />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <MaterialIcons name="lock" size={24} color="#7F8C8D" style={styles.icon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Şifre"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <MaterialIcons name="lock" size={24} color="#7F8C8D" style={styles.icon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Şifre Tekrar"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-            />
-          </View>
-
-          <View style={styles.pickerContainer}>
-            <MaterialIcons name="person" size={24} color="#7F8C8D" style={styles.icon} />
-            <Picker
-              selectedValue={role}
-              onValueChange={(itemValue) => setRole(itemValue)}
-              style={styles.picker}
-            >
-              <Picker.Item label="Öğrenci" value={USER_ROLES.USER} />
-              <Picker.Item label="Öğretmen" value={USER_ROLES.TEACHER} />
-            </Picker>
-          </View>
-
-          <TouchableOpacity
-            style={styles.button}
-            onPress={handleRegister}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.buttonText}>Kayıt Ol</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.linkButton}
-            onPress={() => navigation.navigate('Login')}
-          >
-            <Text style={styles.linkText}>Zaten hesabınız var mı? Giriş yapın</Text>
-          </TouchableOpacity>
+          )}
         </View>
-      </LinearGradient>
-    </ScrollView>
+        {username.length >= 3 && (
+          <Text style={[
+            styles.usernameStatus,
+            { color: usernameAvailable ? "#27AE60" : "#E74C3C" }
+          ]}>
+            {usernameAvailable ? "Kullanıcı adı uygun" : "Bu kullanıcı adı kullanımda"}
+          </Text>
+        )}
+
+        {/* Email Input */}
+        <View style={styles.inputContainer}>
+          <MaterialIcons name="email" size={24} color="#95A5A6" />
+          <TextInput
+            style={styles.input}
+            placeholder="E-posta"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+        </View>
+
+        {/* Password Input */}
+        <View style={styles.inputContainer}>
+          <MaterialIcons name="lock" size={24} color="#95A5A6" />
+          <TextInput
+            style={styles.input}
+            placeholder="Şifre"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
+        </View>
+
+        <TouchableOpacity 
+          style={styles.button}
+          onPress={handleRegister}
+          disabled={loading || !usernameAvailable}
+        >
+          {loading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <>
+              <MaterialIcons name="person-add" size={24} color="#FFFFFF" />
+              <Text style={styles.buttonText}>Kayıt Ol</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.loginLink}
+          onPress={() => navigation.navigate('Login')}
+        >
+          <Text style={styles.loginLinkText}>
+            Zaten hesabın var mı? Giriş yap
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexGrow: 1,
-  },
-  gradient: {
     flex: 1,
+    backgroundColor: '#F5F6FA',
     justifyContent: 'center',
     padding: 20,
   },
   formContainer: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
     padding: 20,
+    borderRadius: 12,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 2,
     },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.1,
     shadowRadius: 3.84,
     elevation: 5,
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#2C3E50',
-    marginBottom: 30,
+    marginBottom: 24,
     textAlign: 'center',
   },
   inputContainer: {
@@ -160,48 +193,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#F5F6FA',
     borderRadius: 8,
-    marginBottom: 16,
     paddingHorizontal: 12,
-  },
-  pickerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F5F6FA',
-    borderRadius: 8,
-    marginBottom: 16,
-    paddingLeft: 12,
-  },
-  icon: {
-    marginRight: 8,
+    marginBottom: 12,
   },
   input: {
     flex: 1,
     paddingVertical: 12,
+    paddingHorizontal: 8,
     fontSize: 16,
     color: '#2C3E50',
   },
-  picker: {
-    flex: 1,
-    height: 50,
-  },
   button: {
     backgroundColor: '#4A90E2',
-    borderRadius: 8,
-    paddingVertical: 14,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 10,
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 12,
   },
   buttonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+    marginLeft: 8,
   },
-  linkButton: {
+  loginLink: {
     marginTop: 16,
     alignItems: 'center',
   },
-  linkText: {
+  loginLinkText: {
     color: '#4A90E2',
     fontSize: 14,
+  },
+  usernameStatus: {
+    fontSize: 12,
+    marginTop: -8,
+    marginBottom: 8,
+    marginLeft: 4,
   },
 }); 

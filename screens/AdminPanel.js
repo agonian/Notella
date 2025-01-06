@@ -1,127 +1,180 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, ActivityIndicator, Alert } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  View,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Text,
+  Alert,
+  TextInput,
+  Modal,
+  Switch,
+  ActivityIndicator,
+} from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot } from '@firebase/firestore';
-import { db, auth } from '../firebaseConfig/config';
-import { examService } from '../services/examService';
-import { subjectService } from '../services/subjectService';
+import LoadingScreen from '../components/LoadingScreen';
+import * as categoryService from '../services/categoryService';
+import { addNote } from '../services/noteService';
+import { logger } from '../utils/logger';
 
-export default function AdminPanel() {
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [categories, setCategories] = useState([]);
+export default function AdminPanel({ navigation }) {
+  const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
-  const [exams, setExams] = useState([]);
-  const [selectedExam, setSelectedExam] = useState(null);
-  const [subjects, setSubjects] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [categories, setCategories] = useState([]);
   const [modalVisible, setModalVisible] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
-  const [formData, setFormData] = useState({
-    ad: '',
-    aciklama: '',
-    icon: 'folder'
+  const [noteForm, setNoteForm] = useState({
+    title: '',
+    description: '',
   });
-  const [stats, setStats] = useState({
-    categories: 0,
-    exams: 0,
-    subjects: 0
+  const [categoryForm, setCategoryForm] = useState({
+    name: '',
+    description: '',
+    icon: 'folder',
+    hasNotes: false,
+    parentId: null,
   });
+  const [expandedCategories, setExpandedCategories] = useState(new Set());
+  const [searchText, setSearchText] = useState('');
+  const [isAllExpanded, setIsAllExpanded] = useState(false);
 
-  // Kategorileri ve istatistikleri dinle
+  // Filtrelenmiş kategorileri hesapla
+  const filteredCategories = useMemo(() => {
+    if (!searchText) return categories;
+    return categoryService.getFilteredCategories(categories, searchText);
+  }, [categories, searchText]);
+
+  const toggleAllCategories = () => {
+    // Eğer herhangi bir kategori açıksa, hepsini kapat
+    if (expandedCategories.size > 0) {
+      setExpandedCategories(new Set());
+      setIsAllExpanded(false);
+      return;
+    }
+
+    // Eğer tüm kategoriler kapalıysa, hepsini aç
+    const allCategoryIds = new Set();
+    const addCategoryIds = (categories) => {
+      categories.forEach(category => {
+        if (category) {  // Null kontrolü ekle
+          allCategoryIds.add(category.id);
+          if (category.children?.length > 0) {
+            addCategoryIds(category.children);
+          }
+        }
+      });
+    };
+    addCategoryIds(filteredCategories);  // categories yerine filteredCategories kullan
+    setExpandedCategories(allCategoryIds);
+    setIsAllExpanded(true);
+  };
+
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "Kategoriler"),
-      (snapshot) => {
-        const categoriesData = [];
-        snapshot.forEach((doc) => {
-          categoriesData.push({
-            id: doc.id,
-            ...doc.data()
-          });
-        });
-        setCategories(categoriesData);
-        setStats(prev => ({ ...prev, categories: categoriesData.length }));
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Kategoriler dinlenirken hata:', error);
-        setLoading(false);
-      }
-    );
-    return () => unsubscribe();
+    loadCategories();
   }, []);
 
-  // Seçili kategorinin sınavlarını getir
-  useEffect(() => {
-    if (selectedCategory) {
-      const loadExams = async () => {
-        try {
-          const examsData = await examService.getExams(selectedCategory.id);
-          setExams(examsData);
-        } catch (error) {
-          console.error('Sınavlar yüklenirken hata:', error);
-        }
-      };
-      loadExams();
+  const loadCategories = async () => {
+    try {
+      const categoriesData = await categoryService.loadCategories();
+      setCategories(categoriesData);
+    } catch (error) {
+      console.error('Kategoriler yüklenirken hata:', error);
+      Alert.alert('Hata', 'Kategoriler yüklenirken bir hata oluştu.');
     }
-  }, [selectedCategory]);
+  };
 
-  // Seçili sınavın konularını getir
-  useEffect(() => {
-    if (selectedCategory && selectedExam) {
-      const loadSubjects = async () => {
-        try {
-          const subjectsData = await subjectService.getSubjects(selectedCategory.id, selectedExam.id);
-          setSubjects(subjectsData);
-        } catch (error) {
-          console.error('Konular yüklenirken hata:', error);
-        }
-      };
-      loadSubjects();
+  const handleAddCategory = async () => {
+    if (!categoryForm.name.trim()) {
+      Alert.alert('Uyarı', 'Kategori adı boş olamaz.');
+      return;
     }
-  }, [selectedCategory, selectedExam]);
 
-  const handleAdd = () => {
-    setEditingItem(null);
-    setFormData({
-      ad: '',
-      aciklama: '',
-      icon: 'folder'
+    setLoading(true);
+    try {
+      await categoryService.addCategory(categoryForm);
+      Alert.alert('Başarılı', 'Kategori başarıyla eklendi.');
+      
+      setCategoryForm({
+        name: '',
+        description: '',
+        icon: 'folder',
+        hasNotes: false,
+        parentId: null,
+      });
+      setModalVisible(false);
+      await loadCategories();
+    } catch (error) {
+      console.error('Kategori eklenirken hata:', error);
+      Alert.alert('Hata', 'Kategori eklenirken bir hata oluştu.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddSubcategory = (parentCategory) => {
+    setCategoryForm({
+      name: '',
+      description: '',
+      icon: 'folder',
+      hasNotes: false,
+      parentId: parentCategory.id,
     });
+    setSelectedCategory(null);
     setModalVisible(true);
   };
 
-  const handleEdit = (item) => {
-    setEditingItem(item);
-    setFormData({
-      ad: item.ad || '',
-      aciklama: item.aciklama || '',
-      icon: item.icon || 'folder'
+  const handleEditCategory = async (category) => {
+    setCategoryForm({
+      name: category.name,
+      description: category.description || '',
+      icon: category.icon || 'folder',
+      hasNotes: category.hasNotes || false,
+      parentId: category.parentId,
     });
+    setSelectedCategory(category);
     setModalVisible(true);
   };
 
-  const handleDelete = async (item) => {
+  const handleUpdateCategory = async () => {
+    if (!categoryForm.name.trim()) {
+      Alert.alert('Uyarı', 'Kategori adı boş olamaz.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await categoryService.updateCategory(selectedCategory.id, categoryForm);
+      Alert.alert('Başarılı', 'Kategori başarıyla güncellendi.');
+      setModalVisible(false);
+      setSelectedCategory(null);
+      await loadCategories();
+    } catch (error) {
+      console.error('Kategori güncellenirken hata:', error);
+      Alert.alert('Hata', 'Kategori güncellenirken bir hata oluştu.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteCategory = async (category) => {
     Alert.alert(
-      "Silme Onayı",
-      "Bu öğeyi silmek istediğinizden emin misiniz?",
+      'Kategori Sil',
+      'Bu kategoriyi silmek istediğinizden emin misiniz?',
       [
-        { text: "İptal", style: "cancel" },
-        { 
-          text: "Sil", 
-          style: "destructive",
+        { text: 'İptal', style: 'cancel' },
+        {
+          text: 'Sil',
+          style: 'destructive',
           onPress: async () => {
+            setLoading(true);
             try {
-              if (activeTab === 'categories') {
-                await deleteDoc(doc(db, "Kategoriler", item.id));
-              } else if (activeTab === 'exams' && selectedCategory) {
-                await examService.deleteExam(selectedCategory.id, item.id);
-              } else if (activeTab === 'subjects' && selectedCategory && selectedExam) {
-                await subjectService.deleteSubject(selectedCategory.id, selectedExam.id, item.id);
-              }
+              await categoryService.deleteCategory(category.id);
+              Alert.alert('Başarılı', 'Kategori başarıyla silindi.');
+              await loadCategories();
             } catch (error) {
-              console.error('Silme hatası:', error);
-              Alert.alert('Hata', 'Silme işlemi başarısız oldu.');
+              console.error('Kategori silinirken hata:', error);
+              Alert.alert('Hata', 'Kategori silinirken bir hata oluştu.');
+            } finally {
+              setLoading(false);
             }
           }
         }
@@ -129,355 +182,487 @@ export default function AdminPanel() {
     );
   };
 
-  const handleSave = async () => {
-    try {
-      if (activeTab === 'categories') {
-        if (editingItem) {
-          await updateDoc(doc(db, "Kategoriler", editingItem.id), formData);
-        } else {
-          await addDoc(collection(db, "Kategoriler"), formData);
-        }
-      } else if (activeTab === 'exams' && selectedCategory) {
-        if (editingItem) {
-          await examService.updateExam(selectedCategory.id, editingItem.id, formData);
-        } else {
-          await examService.addExam(selectedCategory.id, formData);
-        }
-      } else if (activeTab === 'subjects' && selectedCategory && selectedExam) {
-        if (editingItem) {
-          await subjectService.updateSubject(selectedCategory.id, selectedExam.id, editingItem.id, formData);
-        } else {
-          await subjectService.addSubject(selectedCategory.id, selectedExam.id, formData);
-        }
-      }
-      setModalVisible(false);
-    } catch (error) {
-      console.error('Kaydetme hatası:', error);
-      Alert.alert('Hata', 'Kaydetme işlemi başarısız oldu.');
+  const handleAddNote = async () => {
+    if (!selectedCategory) {
+      Alert.alert('Uyarı', 'Lütfen bir kategori seçin.');
+      return;
     }
+    if (!selectedCategory.hasNotes) {
+      Alert.alert('Uyarı', 'Seçili kategoriye not eklenemez.');
+      return;
+    }
+    if (!noteForm.title.trim()) {
+      Alert.alert('Uyarı', 'Not başlığı boş olamaz.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await addNote(noteForm, selectedCategory.id, selectedCategory.path || selectedCategory.name);
+      Alert.alert('Başarılı', 'Not başarıyla eklendi.');
+      setNoteForm({ title: '', description: '' });
+      setSelectedCategory(null);
+    } catch (error) {
+      logger.error('Not eklenirken hata:', error);
+      Alert.alert('Hata', 'Not eklenirken bir hata oluştu.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleCategory = (categoryId) => {
+    const newExpanded = new Set(expandedCategories);
+    if (newExpanded.has(categoryId)) {
+      newExpanded.delete(categoryId);
+    } else {
+      newExpanded.add(categoryId);
+    }
+    setExpandedCategories(newExpanded);
   };
 
   const handleCategorySelect = (category) => {
-    setSelectedCategory(category);
-    setSelectedExam(null);
-    setActiveTab('exams');
-  };
-
-  const handleExamSelect = (exam) => {
-    setSelectedExam(exam);
-    setActiveTab('subjects');
-  };
-
-  const renderBreadcrumb = () => (
-    <View style={styles.breadcrumb}>
-      <TouchableOpacity 
-        onPress={() => {
-          setActiveTab('categories');
-          setSelectedCategory(null);
-          setSelectedExam(null);
-        }}
-        style={styles.breadcrumbItem}
-      >
-        <Text style={styles.breadcrumbText}>Kategoriler</Text>
-      </TouchableOpacity>
-      
-      {selectedCategory && (
-        <>
-          <MaterialIcons name="chevron-right" size={20} color="#7F8C8D" />
-          <TouchableOpacity 
-            onPress={() => {
-              setActiveTab('exams');
-              setSelectedExam(null);
-            }}
-            style={styles.breadcrumbItem}
-          >
-            <Text style={styles.breadcrumbText}>{selectedCategory.ad}</Text>
-          </TouchableOpacity>
-        </>
-      )}
-      
-      {selectedExam && (
-        <>
-          <MaterialIcons name="chevron-right" size={20} color="#7F8C8D" />
-          <TouchableOpacity 
-            onPress={() => setActiveTab('subjects')}
-            style={styles.breadcrumbItem}
-          >
-            <Text style={styles.breadcrumbText}>{selectedExam.ad}</Text>
-          </TouchableOpacity>
-        </>
-      )}
-    </View>
-  );
-
-  const renderItem = (item) => (
-    <TouchableOpacity 
-      key={item.id} 
-      style={styles.itemCard}
-      onPress={() => {
-        if (activeTab === 'categories') handleCategorySelect(item);
-        else if (activeTab === 'exams') handleExamSelect(item);
-      }}
-    >
-      <View style={styles.itemContent}>
-        <MaterialIcons name={item.icon || 'folder'} size={24} color="#2C3E50" />
-        <View style={styles.itemText}>
-          <Text style={styles.itemTitle}>{item.ad || item.id}</Text>
-          <Text style={styles.itemDescription}>{item.aciklama || 'Açıklama yok'}</Text>
-        </View>
-      </View>
-      <View style={styles.itemActions}>
-        <TouchableOpacity onPress={() => handleEdit(item)} style={styles.actionButton}>
-          <MaterialIcons name="edit" size={20} color="#4A90E2" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => handleDelete(item)} style={styles.actionButton}>
-          <MaterialIcons name="delete" size={20} color="#E74C3C" />
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
-  );
-
-  const renderContent = () => {
-    if (activeTab === 'categories') {
-      return categories.map(renderItem);
-    } else if (activeTab === 'exams' && selectedCategory) {
-      return exams.map(renderItem);
-    } else if (activeTab === 'subjects' && selectedCategory && selectedExam) {
-      return subjects.map(renderItem);
+    if (category.hasNotes) {
+      setSelectedCategory(category);
     }
-    return null;
   };
 
-  // Dashboard içeriği
-  const renderDashboard = () => (
-    <View style={styles.dashboardContainer}>
-      <View style={styles.welcomeSection}>
-        <MaterialIcons name="admin-panel-settings" size={50} color="#4A90E2" />
-        <Text style={styles.welcomeText}>Hoş Geldiniz, Admin!</Text>
-        <Text style={styles.adminEmail}>{auth.currentUser?.email}</Text>
-      </View>
+  const renderCategoryItem = (category, depth = 0) => {
+    const paddingLeft = 16 + (depth * 20);
+    const hasChildren = category.children && category.children.length > 0;
+    const isExpanded = expandedCategories.has(category.id);
 
-      <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <MaterialIcons name="category" size={30} color="#4A90E2" />
-          <Text style={styles.statNumber}>{stats.categories}</Text>
-          <Text style={styles.statLabel}>Kategori</Text>
-        </View>
-
-        <View style={styles.statCard}>
-          <MaterialIcons name="school" size={30} color="#50C878" />
-          <Text style={styles.statNumber}>{exams.length}</Text>
-          <Text style={styles.statLabel}>Sınav</Text>
-        </View>
-
-        <View style={styles.statCard}>
-          <MaterialIcons name="subject" size={30} color="#E74C3C" />
-          <Text style={styles.statNumber}>{subjects.length}</Text>
-          <Text style={styles.statLabel}>Konu</Text>
-        </View>
-      </View>
-
-      <View style={styles.quickActions}>
-        <Text style={styles.sectionTitle}>Hızlı İşlemler</Text>
-        <View style={styles.actionButtons}>
-          <TouchableOpacity 
-            style={[styles.actionButton, { backgroundColor: '#4A90E2' }]}
-            onPress={() => setActiveTab('categories')}
-          >
-            <MaterialIcons name="add" size={24} color="#FFFFFF" />
-            <Text style={styles.actionButtonText}>Yeni Kategori</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.actionButton, { backgroundColor: '#50C878' }]}
-            onPress={() => {
-              if (categories.length > 0) {
-                setSelectedCategory(categories[0]);
-                setActiveTab('exams');
-              } else {
-                Alert.alert('Uyarı', 'Önce kategori eklemelisiniz.');
-              }
-            }}
-          >
-            <MaterialIcons name="add" size={24} color="#FFFFFF" />
-            <Text style={styles.actionButtonText}>Yeni Sınav</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-
-  if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size={40} color="#4A90E2" />
+      <View key={category.id}>
+        <TouchableOpacity
+          onPress={() => handleCategorySelect(category)}
+          style={[styles.categoryItem, { paddingLeft }]}
+        >
+          <View style={styles.categoryHeader}>
+            {hasChildren && (
+              <TouchableOpacity
+                onPress={(e) => {
+                  e.stopPropagation();
+                  toggleCategory(category.id);
+                }}
+                style={styles.expandButton}
+              >
+                <MaterialIcons
+                  name={isExpanded ? 'expand-more' : 'chevron-right'}
+                  size={24}
+                  color="#2C3E50"
+                />
+              </TouchableOpacity>
+            )}
+            <MaterialIcons 
+              name={category.icon || 'folder'} 
+              size={24} 
+              color={category.hasNotes ? '#2C3E50' : '#95A5A6'} 
+            />
+            <Text style={[
+              styles.categoryName,
+              !category.hasNotes && styles.nonSelectableCategoryText
+            ]}>
+              {category.name}
+            </Text>
+          </View>
+          <View style={styles.categoryActions}>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleAddSubcategory(category);
+              }}
+            >
+              <MaterialIcons name="add" size={20} color="#4A90E2" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleEditCategory(category);
+              }}
+            >
+              <MaterialIcons name="edit" size={20} color="#4A90E2" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleDeleteCategory(category);
+              }}
+            >
+              <MaterialIcons name="delete" size={20} color="#E74C3C" />
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+        {hasChildren && isExpanded && (
+          <View style={styles.childrenContainer}>
+            {category.children.map(child => renderCategoryItem(child, depth + 1))}
+          </View>
+        )}
       </View>
     );
+  };
+
+  const renderCategorySelectItem = (category, depth = 0, parentPath = '') => {
+    const paddingLeft = 16 + (depth * 20);
+    const currentPath = parentPath ? `${parentPath} > ${category.name}` : category.name;
+    const hasChildren = category.children && category.children.length > 0;
+    const isExpanded = expandedCategories.has(category.id);
+
+    return (
+      <View key={category.id}>
+        <TouchableOpacity
+          style={[
+            styles.categorySelectItem,
+            { paddingLeft },
+            selectedCategory?.id === category.id && styles.selectedCategoryItem,
+            !category.hasNotes && styles.nonSelectableCategory
+          ]}
+          onPress={() => {
+            if (category.hasNotes) {
+              setSelectedCategory({...category, path: currentPath});
+              setCategorySelectModalVisible(false);
+            }
+          }}
+          disabled={!category.hasNotes}
+        >
+          <View style={styles.categorySelectHeader}>
+            {hasChildren && (
+              <TouchableOpacity
+                onPress={(e) => {
+                  e.stopPropagation();
+                  toggleCategory(category.id);
+                }}
+                style={styles.expandButton}
+              >
+                <MaterialIcons
+                  name={isExpanded ? 'expand-more' : 'chevron-right'}
+                  size={24}
+                  color="#2C3E50"
+                />
+              </TouchableOpacity>
+            )}
+            <MaterialIcons 
+              name={category.icon || 'folder'} 
+              size={24} 
+              color={category.hasNotes ? '#2C3E50' : '#95A5A6'} 
+            />
+            <View style={styles.categorySelectContent}>
+              <Text style={[
+                styles.categorySelectName,
+                selectedCategory?.id === category.id && styles.selectedCategoryName,
+                !category.hasNotes && styles.nonSelectableCategoryText
+              ]}>
+                {category.name}
+              </Text>
+              {parentPath && (
+                <Text style={styles.categoryPath} numberOfLines={1}>
+                  {parentPath}
+                </Text>
+              )}
+              {!category.hasNotes && (
+                <Text style={styles.categorySelectLabel}>Not eklenemez</Text>
+              )}
+            </View>
+          </View>
+        </TouchableOpacity>
+        {hasChildren && isExpanded && (
+          <View style={styles.childrenContainer}>
+            {category.children.map(child => 
+              renderCategorySelectItem(child, depth + 1, currentPath)
+            )}
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  if (loading) {
+    return <LoadingScreen />;
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.tabBar}>
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'dashboard' && styles.activeTab]}
-          onPress={() => setActiveTab('dashboard')}
+    <ScrollView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Yönetim Paneli</Text>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => {
+            setCategoryForm({
+              name: '',
+              description: '',
+              icon: 'folder',
+              hasNotes: false,
+              parentId: null,
+            });
+            setSelectedCategory(null);
+            setModalVisible(true);
+          }}
         >
-          <MaterialIcons 
-            name="dashboard" 
-            size={24} 
-            color={activeTab === 'dashboard' ? '#4A90E2' : '#7F8C8D'} 
-          />
-          <Text style={[styles.tabText, activeTab === 'dashboard' && styles.activeTabText]}>
-            Dashboard
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'categories' && styles.activeTab]}
-          onPress={() => setActiveTab('categories')}
-        >
-          <MaterialIcons 
-            name="category" 
-            size={24} 
-            color={activeTab === 'categories' ? '#4A90E2' : '#7F8C8D'} 
-          />
-          <Text style={[styles.tabText, activeTab === 'categories' && styles.activeTabText]}>
-            Kategoriler
-          </Text>
+          <MaterialIcons name="add" size={24} color="#FFFFFF" />
+          <Text style={styles.addButtonText}>Yeni Kategori</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
-        {activeTab === 'dashboard' ? renderDashboard() : renderContent()}
-      </ScrollView>
+      <View style={styles.searchContainer}>
+        <MaterialIcons name="search" size={24} color="#95A5A6" />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Kategori ara..."
+          value={searchText}
+          onChangeText={setSearchText}
+        />
+        {searchText ? (
+          <TouchableOpacity onPress={() => setSearchText('')}>
+            <MaterialIcons name="clear" size={24} color="#95A5A6" />
+          </TouchableOpacity>
+        ) : null}
+      </View>
 
-      <TouchableOpacity style={styles.fab} onPress={handleAdd}>
-        <MaterialIcons name="add" size={24} color="#FFFFFF" />
-      </TouchableOpacity>
+      <View style={styles.categoriesContainer}>
+        <View style={styles.categoriesHeader}>
+          <Text style={styles.categoriesTitle}>Kategoriler</Text>
+          <TouchableOpacity
+            style={styles.expandButton}
+            onPress={toggleAllCategories}
+          >
+            <MaterialIcons
+              name={isAllExpanded ? "unfold-less" : "unfold-more"}
+              size={24}
+              color="#2C3E50"
+            />
+          </TouchableOpacity>
+        </View>
+        {filteredCategories.map(category => renderCategoryItem(category))}
+      </View>
 
+      {/* Kategori Formu Modal */}
       <Modal
         visible={modalVisible}
         transparent={true}
         animationType="slide"
+        onRequestClose={() => {
+          setModalVisible(false);
+          setSelectedCategory(null);
+        }}
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>
-              {editingItem ? 'Düzenle' : 'Yeni Ekle'}
-            </Text>
-            
-            <TextInput
-              style={styles.input}
-              placeholder="Ad"
-              value={formData.ad}
-              onChangeText={(text) => setFormData({...formData, ad: text})}
-            />
-            
-            <TextInput
-              style={styles.input}
-              placeholder="Açıklama"
-              value={formData.aciklama}
-              onChangeText={(text) => setFormData({...formData, aciklama: text})}
-              multiline
-            />
-            
-            <TextInput
-              style={styles.input}
-              placeholder="İkon (MaterialIcons)"
-              value={formData.icon}
-              onChangeText={(text) => setFormData({...formData, icon: text})}
-            />
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.cancelButton]} 
-                onPress={() => setModalVisible(false)}
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {selectedCategory ? 'Kategori Düzenle' : 'Yeni Kategori'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setModalVisible(false);
+                  setSelectedCategory(null);
+                }}
               >
-                <Text style={styles.buttonText}>İptal</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.saveButton]}
-                onPress={handleSave}
-              >
-                <Text style={[styles.buttonText, styles.saveButtonText]}>Kaydet</Text>
+                <MaterialIcons name="close" size={24} color="#E74C3C" />
               </TouchableOpacity>
             </View>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Kategori Adı"
+              value={categoryForm.name}
+              onChangeText={(text) => setCategoryForm(prev => ({ ...prev, name: text }))}
+            />
+
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder="Açıklama"
+              value={categoryForm.description}
+              onChangeText={(text) => setCategoryForm(prev => ({ ...prev, description: text }))}
+              multiline
+              numberOfLines={4}
+            />
+
+            <View style={styles.iconSelector}>
+              <Text style={styles.label}>İkon</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {['folder', 'folder-open', 'description', 'article', 'note', 'bookmark'].map((icon) => (
+                  <TouchableOpacity
+                    key={icon}
+                    style={[
+                      styles.iconButton,
+                      categoryForm.icon === icon && styles.selectedIconButton
+                    ]}
+                    onPress={() => setCategoryForm(prev => ({ ...prev, icon }))}
+                  >
+                    <MaterialIcons
+                      name={icon}
+                      size={24}
+                      color={categoryForm.icon === icon ? '#4A90E2' : '#2C3E50'}
+                    />
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            <View style={styles.switchContainer}>
+              <Text style={styles.label}>Not Eklenebilir</Text>
+              <Switch
+                value={categoryForm.hasNotes}
+                onValueChange={(value) => setCategoryForm(prev => ({ ...prev, hasNotes: value }))}
+                trackColor={{ false: '#E2E8F0', true: '#4A90E2' }}
+                thumbColor={categoryForm.hasNotes ? '#FFFFFF' : '#F5F6FA'}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.submitButton, !categoryForm.name.trim() && styles.submitButtonDisabled]}
+              onPress={selectedCategory ? handleUpdateCategory : handleAddCategory}
+              disabled={!categoryForm.name.trim() || loading}
+            >
+              {loading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.submitButtonText}>
+                  {selectedCategory ? 'Güncelle' : 'Ekle'}
+                </Text>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
-    </View>
+
+      {/* Not Ekleme Formu */}
+      <View style={styles.noteFormContainer}>
+        <Text style={styles.sectionTitle}>Not Ekle</Text>
+        <View style={styles.categorySelect}>
+          <View style={styles.categorySelectInfo}>
+            {selectedCategory ? (
+              <>
+                <MaterialIcons
+                  name={selectedCategory.icon || 'folder'}
+                  size={24}
+                  color="#2C3E50"
+                />
+                <Text style={styles.selectedCategoryText}>
+                  {selectedCategory.path || selectedCategory.name}
+                </Text>
+              </>
+            ) : (
+              <Text style={styles.placeholderText}>Yukarıdaki listeden bir kategori seçin...</Text>
+            )}
+          </View>
+        </View>
+
+        <TextInput
+          style={styles.input}
+          placeholder="Not Başlığı"
+          value={noteForm.title}
+          onChangeText={(text) => setNoteForm(prev => ({ ...prev, title: text }))}
+        />
+
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          placeholder="Not Açıklaması"
+          value={noteForm.description}
+          onChangeText={(text) => setNoteForm(prev => ({ ...prev, description: text }))}
+          multiline
+          numberOfLines={4}
+        />
+
+        <TouchableOpacity
+          style={[
+            styles.submitButton,
+            (!selectedCategory || !selectedCategory.hasNotes || loading) && styles.submitButtonDisabled
+          ]}
+          onPress={handleAddNote}
+          disabled={!selectedCategory || !selectedCategory.hasNotes || loading}
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.submitButtonText}>Not Ekle</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F6FA',
+    backgroundColor: '#F8F9FA',
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  breadcrumb: {
+  header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E1E8ED',
-  },
-  breadcrumbItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  breadcrumbText: {
-    fontSize: 16,
-    color: '#4A90E2',
-    marginHorizontal: 5,
-  },
-  content: {
-    flex: 1,
-    padding: 15,
-  },
-  itemCard: {
-    backgroundColor: '#FFFFFF',
-    marginBottom: 12,
-    padding: 16,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  itemContent: {
-    flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
   },
-  itemText: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  itemTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
     color: '#2C3E50',
   },
-  itemDescription: {
-    fontSize: 14,
-    color: '#7F8C8D',
-    marginTop: 4,
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#4A90E2',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
-  itemActions: {
+  addButtonText: {
+    color: '#FFFFFF',
+    marginLeft: 8,
+    fontWeight: '600',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    margin: 16,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 16,
+  },
+  categoriesContainer: {
+    backgroundColor: '#FFFFFF',
+    margin: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  categoryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingRight: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  expandButton: {
+    padding: 4,
+    marginRight: 8,
+  },
+  categoryName: {
+    fontSize: 16,
+    color: '#2C3E50',
+    marginLeft: 12,
+  },
+  categoryActions: {
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -485,178 +670,184 @@ const styles = StyleSheet.create({
     padding: 8,
     marginLeft: 8,
   },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#4A90E2',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 4.65,
+  childrenContainer: {
+    marginLeft: 20,
   },
   modalContainer: {
     flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalContent: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 20,
     width: '90%',
-    maxWidth: 400,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#2C3E50',
-    marginBottom: 20,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#E1E8ED',
+    borderColor: '#E2E8F0',
     borderRadius: 8,
     padding: 12,
-    marginBottom: 12,
+    marginBottom: 16,
     fontSize: 16,
   },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 20,
+  textArea: {
+    height: 100,
+    textAlignVertical: 'top',
   },
-  modalButton: {
-    padding: 12,
-    borderRadius: 8,
-    minWidth: 100,
-    alignItems: 'center',
-    marginLeft: 10,
+  iconSelector: {
+    marginBottom: 16,
   },
-  cancelButton: {
-    backgroundColor: '#E74C3C',
-  },
-  saveButton: {
-    backgroundColor: '#4A90E2',
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
+  label: {
     fontSize: 16,
-  },
-  dashboardContainer: {
-    padding: 20,
-  },
-  welcomeSection: {
-    alignItems: 'center',
-    marginBottom: 30,
-  },
-  welcomeText: {
-    fontSize: 24,
-    fontWeight: 'bold',
     color: '#2C3E50',
-    marginTop: 10,
+    marginBottom: 8,
   },
-  adminEmail: {
-    fontSize: 16,
-    color: '#7F8C8D',
-    marginTop: 5,
+  iconButton: {
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    marginRight: 8,
   },
-  statsContainer: {
+  selectedIconButton: {
+    borderColor: '#4A90E2',
+    backgroundColor: '#F5F6FA',
+  },
+  switchContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 30,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    padding: 15,
-    borderRadius: 12,
     alignItems: 'center',
-    marginHorizontal: 5,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    marginBottom: 16,
   },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2C3E50',
-    marginTop: 5,
+  submitButton: {
+    backgroundColor: '#4A90E2',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
   },
-  statLabel: {
-    fontSize: 14,
-    color: '#7F8C8D',
-    marginTop: 5,
+  submitButtonDisabled: {
+    backgroundColor: '#95A5A6',
   },
-  quickActions: {
-    marginTop: 20,
+  submitButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  noteFormContainer: {
+    backgroundColor: '#FFFFFF',
+    margin: 16,
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#2C3E50',
-    marginBottom: 15,
+    marginBottom: 16,
   },
-  actionButtons: {
+  categorySelect: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F5F6FA',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  actionButton: {
-    flex: 1,
+  categorySelectInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 15,
-    borderRadius: 12,
-    marginHorizontal: 5,
+    flex: 1,
   },
-  actionButtonText: {
-    color: '#FFFFFF',
+  selectedCategoryText: {
     fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
+    color: '#2C3E50',
+    marginLeft: 12,
   },
-  tabBar: {
+  placeholderText: {
+    fontSize: 16,
+    color: '#95A5A6',
+  },
+  categorySelectItem: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 10,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingRight: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E1E8ED',
   },
-  tab: {
-    flex: 1,
+  selectedCategoryItem: {
+    backgroundColor: '#F5F6FA',
+  },
+  nonSelectableCategory: {
+    backgroundColor: '#F8F9FA',
+  },
+  categorySelectHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
+    flex: 1,
   },
-  activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#4A90E2',
+  categorySelectContent: {
+    marginLeft: 12,
+    flex: 1,
   },
-  tabText: {
-    marginLeft: 8,
+  categorySelectName: {
     fontSize: 16,
-    color: '#7F8C8D',
+    color: '#2C3E50',
   },
-  activeTabText: {
+  selectedCategoryName: {
     color: '#4A90E2',
     fontWeight: '600',
+  },
+  nonSelectableCategoryText: {
+    color: '#95A5A6',
+  },
+  categoryPath: {
+    fontSize: 12,
+    color: '#95A5A6',
+    marginTop: 2,
+  },
+  categorySelectLabel: {
+    fontSize: 12,
+    color: '#95A5A6',
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
+  categorySelectList: {
+    flex: 1,
+  },
+  categoriesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  categoriesTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2C3E50',
   },
 }); 

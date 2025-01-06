@@ -1,225 +1,374 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, SafeAreaView, ScrollView } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  Animated,
+  TextInput,
+  Alert,
+} from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { collection, onSnapshot } from '@firebase/firestore';
-import { db, auth } from '../firebaseConfig/config';
-import { getCurrentUserRole } from '../services/authService';
-import { LinearGradient } from 'expo-linear-gradient';
+import * as categoryService from '../services/categoryService';
+import { auth } from '../firebaseConfig/config';
+import { collection, query, orderBy, onSnapshot, getDocs } from '@firebase/firestore';
+import { db } from '../firebaseConfig/config';
+import { getCurrentUsername } from '../services/authService';
+import { logger } from '../utils/logger';
 
-const motivationalQuotes = [
-  "Öğrenme arzusu, başarının ilk adımıdır.",
-  "Her gün yeni bir şey öğren!",
-  "Bilgi paylaştıkça çoğalır.",
-  "Başarı, her gün küçük adımlar atmakla başlar.",
-  "Öğrenmenin yaşı yoktur."
-];
-
-export default function Categories() {
-  const [categories, setCategories] = useState([]);
+export default function Categories({ navigation }) {
   const [loading, setLoading] = useState(true);
-  const [navigatingId, setNavigatingId] = useState(null);
-  const [userName, setUserName] = useState('');
-  const [userRole, setUserRole] = useState(null);
-  const [userStats, setUserStats] = useState({
-    totalNotes: 0,
-    totalTime: '0 saat',
-    lastVisit: new Date().toLocaleDateString('tr-TR', {
-      day: 'numeric',
-      month: 'numeric',
-      year: 'numeric'
-    })
-  });
-  const navigation = useNavigation();
+  const [categories, setCategories] = useState([]);
+  const [filteredCategories, setFilteredCategories] = useState([]);
+  const [greeting, setGreeting] = useState('');
+  const [expandedCategories, setExpandedCategories] = useState(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [username, setUsername] = useState('');
+  const [isAllExpanded, setIsAllExpanded] = useState(false);
+  const [searchTimeout, setSearchTimeout] = useState(null);
 
   useEffect(() => {
-    // Kullanıcı bilgilerini yükle
-    const loadUserInfo = async () => {
-      const user = auth.currentUser;
-      if (user) {
-        const role = await getCurrentUserRole();
-        setUserRole(role);
-        // Önce displayName'i kontrol et, yoksa email'den kullanıcı adını al
-        const displayName = user.displayName || user.email.split('@')[0];
-        setUserName(displayName);
-      }
-    };
-    loadUserInfo();
+    loadCategories();
+    loadUsername();
 
-    // Kategorileri yükle
-    const unsubscribeCategories = onSnapshot(
-      collection(db, "Kategoriler"),
-      (snapshot) => {
-        const categoriesData = [];
-        snapshot.forEach((doc) => {
-          const data = doc.data();
-          categoriesData.push({
-            id: doc.id,
-            name: data.ad || doc.id,
-            description: data.aciklama || '',
-            icon: data.icon || 'folder',
-          });
-        });
-        setCategories(categoriesData);
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Kategoriler dinlenirken hata:', error);
-        setLoading(false);
-      }
+    // Firestore dinleyicisi
+    const q = query(
+      collection(db, 'categories'),
+      orderBy('createdAt', 'asc')
     );
+    
+    const unsubscribe = onSnapshot(q, {
+      next: async (snapshot) => {
+        try {
+          logger.log('Kategori değişikliği algılandı');
+          const allCategories = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate(),
+            updatedAt: doc.data().updatedAt?.toDate()
+          }));
+          
+          const buildTree = (categories, parentId = null) => {
+            return categories
+              .filter(cat => cat.parentId === parentId)
+              .sort((a, b) => {
+                const orderDiff = (a.order || 0) - (b.order || 0);
+                if (orderDiff !== 0) return orderDiff;
+                return (a.createdAt || 0) - (b.createdAt || 0);
+              })
+              .map(cat => ({
+                ...cat,
+                children: buildTree(categories, cat.id)
+              }));
+          };
 
-    // Kullanıcı istatistiklerini yükle
-    const loadUserStats = async () => {
-      try {
-        setUserStats({
-          totalNotes: 0,            // Kullanıcının toplam not sayısı
-          totalTime: '0 saat',      // Toplam çalışma süresi
-          lastVisit: new Date().toLocaleDateString('tr-TR', {
-            day: 'numeric',
-            month: 'numeric',
-            year: 'numeric'
-          })
-        });
-      } catch (error) {
-        console.error('Kullanıcı istatistikleri yüklenirken hata:', error);
+          const tree = buildTree(allCategories);
+          logger.log('Yeni kategori ağacı güncellendi:', { categoryCount: allCategories.length });
+          setCategories(tree);
+          // Arama durumunda filtrelemeyi uygula
+          if (searchQuery) {
+            const filtered = categoryService.getFilteredCategories(tree, searchQuery);
+            setFilteredCategories(filtered);
+          } else {
+            setFilteredCategories(tree);
+          }
+        } catch (error) {
+          logger.error('Kategori işleme hatası:', error);
+          Alert.alert(
+            'Hata',
+            'Kategoriler işlenirken bir hata oluştu: ' + error.message
+          );
+        } finally {
+          setLoading(false);
+        }
+      },
+      error: (error) => {
+        logger.error('Firestore dinleyici hatası:', error);
+        setLoading(false);
+        Alert.alert(
+          'Hata',
+          'Kategoriler güncellenirken bir hata oluştu: ' + error.message
+        );
       }
-    };
+    });
 
-    loadUserStats();
+    // Auth state değişikliğini dinle
+    const authUnsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        await loadUsername();
+      } else {
+        setUsername('Kullanıcı');
+      }
+    });
 
     return () => {
-      unsubscribeCategories();
+      unsubscribe();
+      authUnsubscribe();
     };
-  }, []);
+  }, []); // searchQuery'yi dependency'den kaldırdık
+
+  // Debounced arama fonksiyonu
+  const handleSearch = useCallback((text) => {
+    setSearchQuery(text);
+    
+    // Önceki timeout'u temizle
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
+    }
+
+    // 300ms sonra aramayı gerçekleştir
+    const timeoutId = setTimeout(() => {
+      if (!text.trim()) {
+        setFilteredCategories(categories);
+      } else {
+        const filtered = categoryService.getFilteredCategories(categories, text);
+        setFilteredCategories(filtered);
+      }
+    }, 300);
+
+    setSearchTimeout(timeoutId);
+  }, [categories, searchTimeout]);
+
+  // Component unmount olduğunda timeout'u temizle
+  useEffect(() => {
+    return () => {
+      if (searchTimeout) {
+        clearTimeout(searchTimeout);
+      }
+    };
+  }, [searchTimeout]);
+
+  const loadUsername = async () => {
+    const username = await getCurrentUsername();
+    setUsername(username || 'Kullanıcı');
+  };
 
   const getGreeting = () => {
     const hour = new Date().getHours();
-    if (hour < 12) return 'Günaydın';
-    if (hour < 18) return 'İyi günler';
-    return 'İyi akşamlar';
+    if (hour >= 5 && hour < 12) {
+      return 'günler';
+    } else if (hour >= 12 && hour < 18) {
+      return 'günler';
+    } else {
+      return 'akşamlar';
+    }
   };
 
-  const getRandomQuote = () => {
-    return motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)];
+  const loadCategories = async () => {
+    setLoading(true);
+    try {
+      const q = query(
+        collection(db, 'categories'),
+        orderBy('createdAt', 'asc')
+      );
+      
+      const querySnapshot = await getDocs(q);
+      const allCategories = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate(),
+        updatedAt: doc.data().updatedAt?.toDate()
+      }));
+      
+      // Kategorileri ağaç yapısına dönüştür
+      const buildTree = (categories, parentId = null) => {
+        return categories
+          .filter(cat => cat.parentId === parentId)
+          .sort((a, b) => {
+            const orderDiff = (a.order || 0) - (b.order || 0);
+            if (orderDiff !== 0) return orderDiff;
+            return (a.createdAt || 0) - (b.createdAt || 0);
+          })
+          .map(cat => ({
+            ...cat,
+            children: buildTree(categories, cat.id)
+          }));
+      };
+
+      const tree = buildTree(allCategories);
+      logger.log('Kategoriler yüklendi:', { categoryCount: allCategories.length });
+      setCategories(tree);
+      setFilteredCategories(tree);
+    } catch (error) {
+      logger.error('Kategori yükleme hatası:', error);
+      Alert.alert(
+        'Hata',
+        'Kategoriler yüklenirken bir hata oluştu: ' + error.message
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const collapseAll = () => {
+    // Eğer herhangi bir kategori açıksa, hepsini kapat
+    if (expandedCategories.size > 0) {
+      setExpandedCategories(new Set());
+      setIsAllExpanded(false);
+      return;
+    }
+
+    // Eğer tüm kategoriler kapalıysa, hepsini aç
+    const allIds = new Set();
+    const addAllCategoryIds = (categories) => {
+      categories.forEach(category => {
+        if (category.children && category.children.length > 0) {
+          allIds.add(category.id);
+          addAllCategoryIds(category.children);
+        }
+      });
+    };
+    addAllCategoryIds(categories);
+    setExpandedCategories(allIds);
+    setIsAllExpanded(true);
+  };
+
+  const toggleCategory = (categoryId) => {
+    setExpandedCategories(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(categoryId)) {
+        newSet.delete(categoryId);
+      } else {
+        newSet.add(categoryId);
+      }
+      return newSet;
+    });
   };
 
   const handleCategoryPress = async (category) => {
-    try {
-      setNavigatingId(category.id);
+    if (category.hasNotes) {
+      navigation.navigate('Notes', { 
+        categoryId: category.id,
+        categoryName: category.name
+      });
+    } else if (category.children && category.children.length > 0) {
+      toggleCategory(category.id);
+    } else {
       navigation.navigate('Subcategories', {
         categoryId: category.id,
         categoryName: category.name
       });
-    } catch (error) {
-      console.error('Kategori detaylarına gidilemedi:', error);
-    } finally {
-      setNavigatingId(null);
     }
   };
 
-  const renderFeaturedNote = ({ item }) => (
-    <TouchableOpacity style={styles.featuredNoteCard}>
-      <MaterialIcons name="star" size={20} color="#FFD700" />
-      <Text style={styles.featuredNoteTitle} numberOfLines={1}>{item.title}</Text>
-      <Text style={styles.featuredNoteSubtitle}>{item.category}</Text>
-      <View style={styles.featuredNoteViews}>
-        <MaterialIcons name="visibility" size={16} color="#95A5A6" />
-        <Text style={styles.viewsText}>{item.views}</Text>
-      </View>
-    </TouchableOpacity>
-  );
+  const renderCategoryItem = (category, depth = 0) => {
+    const paddingLeft = 16 + (depth * 20);
+    const isExpanded = expandedCategories.has(category.id);
+    const hasChildren = category.children && category.children.length > 0;
 
-  const renderCategoryItem = ({ item }) => (
-    <TouchableOpacity 
-      style={styles.categoryCard} 
-      onPress={() => handleCategoryPress(item)}
-      disabled={navigatingId === item.id}
-    >
-      <View style={styles.cardContent}>
-        <MaterialIcons name={item.icon} size={24} color="#2C3E50" />
-        <View style={styles.textContainer}>
-          <Text style={styles.categoryText}>{item.name}</Text>
-          {item.description ? (
-            <Text style={styles.descriptionText}>{item.description}</Text>
-          ) : null}
-        </View>
+    return (
+      <View key={category.id}>
+        <TouchableOpacity
+          style={[styles.categoryItem, { paddingLeft }]}
+          onPress={() => handleCategoryPress(category)}
+        >
+          <View style={styles.categoryInfo}>
+            <MaterialIcons 
+              name={category.icon || 'folder'} 
+              size={24} 
+              color="#2C3E50" 
+            />
+            <View style={styles.categoryTexts}>
+              <Text style={styles.categoryName}>{category.name}</Text>
+              {category.description ? (
+                <Text style={styles.categoryDescription}>
+                  {category.description}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+          {hasChildren ? (
+            <MaterialIcons 
+              name={isExpanded ? 'expand-less' : 'expand-more'} 
+              size={24} 
+              color="#95A5A6" 
+            />
+          ) : (
+            <MaterialIcons 
+              name={category.hasNotes ? 'note' : 'chevron-right'} 
+              size={24} 
+              color="#95A5A6" 
+            />
+          )}
+        </TouchableOpacity>
+        
+        {isExpanded && hasChildren && (
+          <View style={styles.childrenContainer}>
+            {category.children.map(child => renderCategoryItem(child, depth + 1))}
+          </View>
+        )}
       </View>
-      {navigatingId === item.id ? (
-        <ActivityIndicator size={24} color="#4A90E2" />
-      ) : (
-        <MaterialIcons name="chevron-right" size={24} color="#2C3E50" />
-      )}
-    </TouchableOpacity>
-  );
+    );
+  };
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size={40} color="#4A90E2" />
+        <ActivityIndicator size="large" color="#4A90E2" />
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <LinearGradient
-          colors={['#4A90E2', '#50C878']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.welcomeCard}
-        >
-          <Text style={styles.greeting}>{getGreeting()} {userName}</Text>
-          <Text style={styles.quote}>{getRandomQuote()}</Text>
-        </LinearGradient>
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.greeting}>
+          İyi {getGreeting()}, {username}
+        </Text>
+        <Text style={styles.welcomeText}>Notlarınızı kategorize edin ve düzenleyin</Text>
+      </View>
 
-        <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <MaterialIcons name="note" size={24} color="#4A90E2" />
-            <Text style={styles.statNumber}>{userStats.totalNotes}</Text>
-            <Text style={styles.statLabel}>Not</Text>
-          </View>
-          <View style={styles.statCard}>
-            <MaterialIcons name="access-time" size={24} color="#50C878" />
-            <Text style={styles.statNumber}>{userStats.totalTime}</Text>
-            <Text style={styles.statLabel}>Süre</Text>
-          </View>
-          <View style={styles.statCard}>
-            <MaterialIcons name="calendar-today" size={24} color="#E74C3C" />
-            <Text style={styles.statNumber}>{userStats.lastVisit}</Text>
-            <Text style={styles.statLabel}>Son Giriş</Text>
-          </View>
-        </View>
-
-        <Text style={styles.sectionTitle}>Kategoriler</Text>
-        <View style={styles.categoriesList}>
-          {categories.map((item) => (
-            <TouchableOpacity 
-              key={item.id}
-              style={styles.categoryCard} 
-              onPress={() => handleCategoryPress(item)}
-              disabled={navigatingId === item.id}
-            >
-              <View style={styles.cardContent}>
-                <MaterialIcons name={item.icon} size={24} color="#2C3E50" />
-                <View style={styles.textContainer}>
-                  <Text style={styles.categoryText}>{item.name}</Text>
-                  {item.description ? (
-                    <Text style={styles.descriptionText}>{item.description}</Text>
-                  ) : null}
-                </View>
-              </View>
-              {navigatingId === item.id ? (
-                <ActivityIndicator size={24} color="#4A90E2" />
-              ) : (
-                <MaterialIcons name="chevron-right" size={24} color="#2C3E50" />
-              )}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchBar}>
+          <MaterialIcons name="search" size={24} color="#95A5A6" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Kategori ara..."
+            value={searchQuery}
+            onChangeText={handleSearch}
+          />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => handleSearch('')}>
+              <MaterialIcons name="close" size={24} color="#95A5A6" />
             </TouchableOpacity>
-          ))}
+          ) : null}
         </View>
+        {filteredCategories.length > 0 && (
+          <TouchableOpacity 
+            style={styles.collapseButton} 
+            onPress={collapseAll}
+          >
+            <MaterialIcons 
+              name={isAllExpanded ? "unfold-less" : "unfold-more"} 
+              size={24} 
+              color="#4A90E2" 
+            />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <ScrollView style={styles.content}>
+        {filteredCategories.length > 0 ? (
+          filteredCategories.map(category => renderCategoryItem(category))
+        ) : (
+          <View style={styles.emptyContainer}>
+            <MaterialIcons 
+              name={searchQuery ? 'search-off' : 'folder-open'} 
+              size={64} 
+              color="#95A5A6" 
+            />
+            <Text style={styles.emptyText}>
+              {searchQuery ? 'Aramanızla eşleşen kategori bulunamadı' : 'Henüz hiç kategori oluşturulmamış'}
+            </Text>
+            <Text style={styles.emptySubText}>
+              {searchQuery ? 'Farklı bir arama yapmayı deneyin' : 'Admin panelinden yeni kategoriler ekleyebilirsiniz'}
+            </Text>
+          </View>
+        )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -228,161 +377,107 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F6FA',
   },
-  content: {
-    flex: 1,
-  },
-  welcomeCard: {
-    margin: 16,
+  header: {
     padding: 20,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E1E8ED',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E1E8ED',
+  },
+  searchBar: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F6FA',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    fontSize: 16,
+    color: '#2C3E50',
+  },
+  collapseButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#F5F6FA',
   },
   greeting: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#2C3E50',
     marginBottom: 8,
   },
-  quote: {
+  welcomeText: {
     fontSize: 16,
-    color: '#FFFFFF',
-    opacity: 0.9,
+    color: '#7F8C8D',
   },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    marginBottom: 24,
-  },
-  statCard: {
+  content: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    padding: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginHorizontal: 4,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-    minHeight: 100,
-    justifyContent: 'center',
   },
-  statNumber: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#2C3E50',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#7F8C8D',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  featuredSection: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2C3E50',
-    marginLeft: 16,
-    marginBottom: 12,
-  },
-  featuredList: {
-    paddingHorizontal: 16,
-  },
-  featuredNoteCard: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    marginRight: 12,
-    width: 200,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  featuredNoteTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2C3E50',
-    marginTop: 8,
-  },
-  featuredNoteSubtitle: {
-    fontSize: 14,
-    color: '#7F8C8D',
-    marginTop: 4,
-  },
-  featuredNoteViews: {
+  categoryItem: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  viewsText: {
-    fontSize: 12,
-    color: '#95A5A6',
-    marginLeft: 4,
-  },
-  categoriesList: {
-    padding: 16,
-  },
-  categoryCard: {
-    backgroundColor: '#FFFFFF',
-    marginBottom: 12,
-    padding: 16,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E1E8ED',
   },
-  cardContent: {
+  categoryInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
   },
-  textContainer: {
+  categoryTexts: {
     marginLeft: 12,
     flex: 1,
   },
-  categoryText: {
+  categoryName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#2C3E50',
   },
-  descriptionText: {
+  categoryDescription: {
     fontSize: 14,
     color: '#7F8C8D',
-    marginTop: 4,
+    marginTop: 2,
+  },
+  childrenContainer: {
+    backgroundColor: '#FAFBFC',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    marginTop: 50,
+  },
+  emptyText: {
+    fontSize: 18,
+    color: '#2C3E50',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  emptySubText: {
+    fontSize: 14,
+    color: '#7F8C8D',
+    marginTop: 8,
+    textAlign: 'center',
   },
 });

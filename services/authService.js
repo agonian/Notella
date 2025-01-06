@@ -1,5 +1,5 @@
 import { auth, db } from '../firebaseConfig/config';
-import { doc, getDoc, setDoc } from '@firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot } from '@firebase/firestore';
 import { 
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -77,8 +77,24 @@ export const getCurrentUserRole = async () => {
     }
     return null;
   } catch (error) {
-    console.error('Kullanıcı rolü alınırken hata:', error);
-    throw error;
+    console.error('Rol getirme hatası:', error);
+    return null;
+  }
+};
+
+export const getCurrentUsername = async () => {
+  try {
+    const user = auth.currentUser;
+    if (!user) return null;
+
+    const userDoc = await getDoc(doc(db, 'users', user.uid));
+    if (userDoc.exists()) {
+      return userDoc.data().username;
+    }
+    return null;
+  } catch (error) {
+    console.error('Username getirme hatası:', error);
+    return null;
   }
 };
 
@@ -106,4 +122,15 @@ export const hasPermission = async (requiredRole) => {
 // Auth durumu değişikliklerini dinle
 export const subscribeToAuthChanges = (callback) => {
   return onAuthStateChanged(auth, callback);
+};
+
+export const subscribeToUserData = (userId, callback) => {
+  if (!userId) return null;
+  
+  const userDocRef = doc(db, 'users', userId);
+  return onSnapshot(userDocRef, (doc) => {
+    if (doc.exists()) {
+      callback(doc.data());
+    }
+  });
 };

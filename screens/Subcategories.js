@@ -1,103 +1,119 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, SafeAreaView } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+} from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { collection, query, where, onSnapshot } from '@firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot } from '@firebase/firestore';
 import { db } from '../firebaseConfig/config';
 
-export default function Subcategories() {
-  const navigation = useNavigation();
-  const route = useRoute();
+export default function Subcategories({ route, navigation }) {
   const { categoryId, categoryName } = route.params;
-  const [subcategories, setSubcategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [subcategories, setSubcategories] = useState([]);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "Kategoriler", categoryId, "Sinavlar"),
-      (snapshot) => {
-        const examsData = [];
-        snapshot.forEach((doc) => {
-          const data = doc.data();
-          examsData.push({
-            id: doc.id,
-            name: data.ad || doc.id,
-            description: data.aciklama || '',
-            icon: data.icon || 'description',
-          });
-        });
-        setSubcategories(examsData);
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Sınavlar dinlenirken hata:', error);
-        setLoading(false);
-      }
+    // Navigation başlığını ayarla
+    navigation.setOptions({
+      title: categoryName
+    });
+
+    // Alt kategorileri dinle
+    const q = query(
+      collection(db, 'categories'),
+      where('parentId', '==', categoryId),
+      orderBy('order', 'asc')
     );
 
-    return () => unsubscribe();
-  }, [categoryId]);
-
-  const handleExamPress = (exam) => {
-    navigation.navigate("SubcategoryDetails", {
-      categoryId: categoryId,
-      examId: exam.id,
-      examName: exam.name
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      try {
+        console.log('Alt kategori değişikliği algılandı');
+        const subcategoriesData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        console.log('Alt kategoriler:', subcategoriesData);
+        setSubcategories(subcategoriesData);
+      } catch (error) {
+        console.error('Alt kategoriler yüklenirken hata:', error);
+      } finally {
+        setLoading(false);
+      }
+    }, (error) => {
+      console.error('Alt kategori dinleyici hatası:', error);
+      setLoading(false);
     });
-  };
 
-  const renderExamItem = ({ item }) => (
-    <TouchableOpacity 
-      style={styles.categoryCard} 
-      onPress={() => handleExamPress(item)}
-    >
-      <View style={styles.cardContent}>
-        <MaterialIcons name={item.icon} size={24} color="#2C3E50" />
-        <View style={styles.textContainer}>
-          <Text style={styles.categoryText}>{item.name}</Text>
-          {item.description ? (
-            <Text style={styles.descriptionText}>{item.description}</Text>
-          ) : null}
-        </View>
-      </View>
-      <MaterialIcons name="chevron-right" size={24} color="#2C3E50" />
-    </TouchableOpacity>
-  );
+    return () => unsubscribe();
+  }, [categoryId, categoryName]);
+
+  const handleSubcategoryPress = (subcategory) => {
+    if (subcategory.hasNotes) {
+      // Not eklenebilir kategoriye gidildiğinde
+      navigation.navigate('Notes', {
+        categoryId: subcategory.id,
+        categoryName: subcategory.name
+      });
+    } else {
+      // Alt kategorilere gidildiğinde
+      navigation.navigate('Subcategories', {
+        categoryId: subcategory.id,
+        categoryName: subcategory.name
+      });
+    }
+  };
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size={40} color="#4A90E2" />
+        <ActivityIndicator size="large" color="#4A90E2" />
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.breadcrumb}>
-        <TouchableOpacity 
-          style={styles.breadcrumbItem}
-          onPress={() => navigation.goBack()}
-        >
-          <MaterialIcons name="category" size={20} color="#4A90E2" />
-        </TouchableOpacity>
-        <MaterialIcons name="chevron-right" size={20} color="#95A5A6" />
-        <View style={styles.breadcrumbItem}>
-          <MaterialIcons name="folder" size={20} color="#4A90E2" />
-          <Text style={[styles.breadcrumbText, styles.activeBreadcrumb]} numberOfLines={1}>
-            {categoryName}
-          </Text>
-        </View>
-      </View>
-
-      <FlatList
-        data={subcategories}
-        keyExtractor={(item) => item.id}
-        renderItem={renderExamItem}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-      />
-    </SafeAreaView>
+    <View style={styles.container}>
+      <ScrollView style={styles.content}>
+        {subcategories.length > 0 ? (
+          subcategories.map(subcategory => (
+            <TouchableOpacity
+              key={subcategory.id}
+              style={styles.subcategoryItem}
+              onPress={() => handleSubcategoryPress(subcategory)}
+            >
+              <View style={styles.subcategoryInfo}>
+                <MaterialIcons 
+                  name={subcategory.icon || 'folder'} 
+                  size={24} 
+                  color="#2C3E50" 
+                />
+                <View style={styles.subcategoryTexts}>
+                  <Text style={styles.subcategoryName}>{subcategory.name}</Text>
+                  {subcategory.description ? (
+                    <Text style={styles.subcategoryDescription}>
+                      {subcategory.description}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color="#95A5A6" />
+            </TouchableOpacity>
+          ))
+        ) : (
+          <View style={styles.emptyContainer}>
+            <MaterialIcons name="folder-open" size={64} color="#95A5A6" />
+            <Text style={styles.emptyText}>Bu kategoride henüz içerik bulunmuyor</Text>
+            <Text style={styles.emptySubText}>
+              Admin panelinden yeni içerikler ekleyebilirsiniz
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -106,75 +122,59 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F6FA',
   },
-  breadcrumb: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E1E8ED',
-  },
-  breadcrumbItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  breadcrumbText: {
-    fontSize: 15,
-    color: '#4A90E2',
-    marginLeft: 6,
-    fontWeight: '500',
-  },
-  activeBreadcrumb: {
-    fontWeight: 'bold',
-  },
-  listContainer: {
-    padding: 15,
-  },
-  categoryCard: {
-    backgroundColor: '#FFFFFF',
-    marginBottom: 12,
-    padding: 16,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  cardContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  content: {
     flex: 1,
-  },
-  textContainer: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  categoryText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2C3E50',
-  },
-  descriptionText: {
-    fontSize: 14,
-    color: '#7F8C8D',
-    marginTop: 4,
-  },
-  subjectCount: {
-    fontSize: 12,
-    color: '#4A90E2',
-    marginTop: 4,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  subcategoryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E1E8ED',
+  },
+  subcategoryInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  subcategoryTexts: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  subcategoryName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2C3E50',
+  },
+  subcategoryDescription: {
+    fontSize: 14,
+    color: '#7F8C8D',
+    marginTop: 2,
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    marginTop: 50,
+  },
+  emptyText: {
+    fontSize: 18,
+    color: '#2C3E50',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  emptySubText: {
+    fontSize: 14,
+    color: '#7F8C8D',
+    marginTop: 8,
+    textAlign: 'center',
   },
 });

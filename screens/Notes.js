@@ -1,123 +1,119 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, SafeAreaView } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+} from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { collection, onSnapshot } from '@firebase/firestore';
+import { collection, query, where, onSnapshot } from '@firebase/firestore';
 import { db } from '../firebaseConfig/config';
+import { logger } from '../utils/logger';
 
-export default function Notes() {
-  const navigation = useNavigation();
-  const route = useRoute();
-  const { categoryId, examId, subjectId, subjectName, categoryName, examName } = route.params;
-  const [notes, setNotes] = useState([]);
+export default function Notes({ route, navigation }) {
+  const { categoryId, categoryName } = route.params;
   const [loading, setLoading] = useState(true);
+  const [notes, setNotes] = useState([]);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "Kategoriler", categoryId, "Sinavlar", examId, "Konular", subjectId, "Notlar"),
-      (snapshot) => {
-        const notesData = [];
-        snapshot.forEach((doc) => {
-          const data = doc.data();
-          notesData.push({
-            id: doc.id,
-            title: data.baslik || 'İsimsiz Not',
-            content: data.icerik || '',
-            date: data.tarih ? new Date(data.tarih.toDate()).toLocaleDateString('tr-TR') : '',
-            author: data.yazar || '',
-          });
-        });
-        setNotes(notesData);
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Notlar dinlenirken hata:', error);
-        setLoading(false);
-      }
+    // Navigation başlığını ayarla
+    navigation.setOptions({
+      title: categoryName
+    });
+
+    // Notları dinle
+    const q = query(
+      collection(db, 'notes'),
+      where('categoryId', '==', categoryId)
     );
 
-    return () => unsubscribe();
-  }, [categoryId, examId, subjectId]);
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      try {
+        logger.log('Not değişikliği algılandı');
+        const notesData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        logger.log('Notlar:', notesData);
+        setNotes(notesData);
+      } catch (error) {
+        logger.error('Notlar yüklenirken hata:', error);
+      } finally {
+        setLoading(false);
+      }
+    }, (error) => {
+      logger.error('Not dinleyici hatası:', error);
+      setLoading(false);
+    });
 
-  const renderNoteItem = ({ item }) => (
-    <View style={styles.noteCard}>
-      <View style={styles.noteHeader}>
-        <MaterialIcons name="description" size={24} color="#4A90E2" />
-        <View style={styles.noteInfo}>
-          <Text style={styles.noteTitle}>{item.title}</Text>
-          <View style={styles.noteMetadata}>
-            {item.author && (
-              <View style={styles.metadataItem}>
-                <MaterialIcons name="person" size={14} color="#95A5A6" />
-                <Text style={styles.metadataText}>{item.author}</Text>
-              </View>
-            )}
-            {item.date && (
-              <View style={styles.metadataItem}>
-                <MaterialIcons name="schedule" size={14} color="#95A5A6" />
-                <Text style={styles.metadataText}>{item.date}</Text>
-              </View>
-            )}
-          </View>
-        </View>
-      </View>
-      <Text style={styles.noteContent} numberOfLines={3}>{item.content}</Text>
-    </View>
-  );
+    return () => unsubscribe();
+  }, [categoryId, categoryName]);
+
+  const handleNotePress = (note) => {
+    // Not detayına git
+    navigation.navigate('NoteDetail', {
+      noteId: note.id,
+      noteName: note.title
+    });
+  };
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size={40} color="#4A90E2" />
+        <ActivityIndicator size="large" color="#4A90E2" />
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.breadcrumb}>
-        <TouchableOpacity 
-          style={styles.breadcrumbItem}
-          onPress={() => navigation.navigate('Categories')}
-        >
-          <MaterialIcons name="category" size={20} color="#4A90E2" />
-        </TouchableOpacity>
-        <MaterialIcons name="chevron-right" size={20} color="#95A5A6" />
-        <TouchableOpacity 
-          style={styles.breadcrumbItem}
-          onPress={() => navigation.navigate('Subcategories', { categoryId, categoryName })}
-        >
-          <MaterialIcons name="folder" size={20} color="#4A90E2" />
-        </TouchableOpacity>
-        <MaterialIcons name="chevron-right" size={20} color="#95A5A6" />
-        <TouchableOpacity 
-          style={styles.breadcrumbItem}
-          onPress={() => navigation.navigate('SubcategoryDetails', { 
-            categoryId, 
-            categoryName,
-            examId,
-            examName 
-          })}
-        >
-          <MaterialIcons name="description" size={20} color="#4A90E2" />
-        </TouchableOpacity>
-        <MaterialIcons name="chevron-right" size={20} color="#95A5A6" />
-        <View style={styles.breadcrumbItem}>
-          <MaterialIcons name="note" size={20} color="#4A90E2" />
-          <Text style={[styles.breadcrumbText, styles.activeBreadcrumb]} numberOfLines={1}>
-            {subjectName}
-          </Text>
-        </View>
-      </View>
-
-      <FlatList
-        data={notes}
-        keyExtractor={(item) => item.id}
-        renderItem={renderNoteItem}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-      />
-    </SafeAreaView>
+    <View style={styles.container}>
+      <ScrollView style={styles.content}>
+        {notes.length > 0 ? (
+          notes.map(note => (
+            <TouchableOpacity
+              key={note.id}
+              style={styles.noteItem}
+              onPress={() => handleNotePress(note)}
+            >
+              <View style={styles.noteInfo}>
+                <MaterialIcons 
+                  name={note.icon || 'description'} 
+                  size={24} 
+                  color="#2C3E50" 
+                />
+                <View style={styles.noteTexts}>
+                  <Text style={styles.noteTitle}>{note.title}</Text>
+                  {note.description ? (
+                    <Text style={styles.noteDescription} numberOfLines={2}>
+                      {note.description}
+                    </Text>
+                  ) : null}
+                  <View style={styles.noteMetadata}>
+                    <Text style={styles.noteDate}>
+                      {new Date(note.createdAt?.toDate()).toLocaleDateString('tr-TR')}
+                    </Text>
+                    <Text style={styles.noteAuthor}>
+                      {note.authorName || 'Anonim'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color="#95A5A6" />
+            </TouchableOpacity>
+          ))
+        ) : (
+          <View style={styles.emptyContainer}>
+            <MaterialIcons name="note-add" size={64} color="#95A5A6" />
+            <Text style={styles.emptyText}>Bu kategoride henüz not bulunmuyor</Text>
+            <Text style={styles.emptySubText}>
+              Yeni not eklemek için sağ üst köşedeki + butonunu kullanabilirsiniz
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -126,83 +122,73 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F6FA',
   },
-  breadcrumb: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E1E8ED',
-  },
-  breadcrumbItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  breadcrumbText: {
-    fontSize: 15,
-    color: '#4A90E2',
-    marginLeft: 6,
-    fontWeight: '500',
-    maxWidth: 150,
-  },
-  activeBreadcrumb: {
-    fontWeight: 'bold',
-  },
-  listContainer: {
-    padding: 15,
-  },
-  noteCard: {
-    backgroundColor: '#FFFFFF',
-    marginBottom: 12,
-    padding: 16,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  noteHeader: {
-    flexDirection: 'row',
-    marginBottom: 12,
-  },
-  noteInfo: {
+  content: {
     flex: 1,
-    marginLeft: 12,
-  },
-  noteTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2C3E50',
-    marginBottom: 4,
-  },
-  noteMetadata: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  metadataItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  metadataText: {
-    fontSize: 12,
-    color: '#95A5A6',
-    marginLeft: 4,
-  },
-  noteContent: {
-    fontSize: 14,
-    color: '#34495E',
-    lineHeight: 20,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  noteItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E1E8ED',
+  },
+  noteInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  noteTexts: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  noteTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2C3E50',
+  },
+  noteDescription: {
+    fontSize: 14,
+    color: '#7F8C8D',
+    marginTop: 2,
+  },
+  noteMetadata: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  noteDate: {
+    fontSize: 12,
+    color: '#95A5A6',
+  },
+  noteAuthor: {
+    fontSize: 12,
+    color: '#95A5A6',
+    fontStyle: 'italic',
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    marginTop: 50,
+  },
+  emptyText: {
+    fontSize: 18,
+    color: '#2C3E50',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  emptySubText: {
+    fontSize: 14,
+    color: '#7F8C8D',
+    marginTop: 8,
+    textAlign: 'center',
   },
 });
