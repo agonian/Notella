@@ -1,9 +1,43 @@
 import { db } from '../firebaseConfig/config';
-import { collection, addDoc, query, where, getDocs, serverTimestamp, doc, updateDoc, deleteDoc, writeBatch, orderBy } from '@firebase/firestore';
+import { collection, addDoc, query, where, getDocs, serverTimestamp, doc, updateDoc, deleteDoc, writeBatch, orderBy, getCountFromServer } from '@firebase/firestore';
 import { logger } from '../utils/logger';
+
+// Not sayılarını tutacak global değişken
+let categoryNoteCounts = {};
+
+// Not sayılarını güncelle
+export const updateNoteCounts = (note, isAdd = true) => {
+  if (!note || !note.categoryId) return;
+  
+  categoryNoteCounts[note.categoryId] = (categoryNoteCounts[note.categoryId] || 0) + (isAdd ? 1 : -1);
+  // Eğer sayı 0'ın altına düşerse 0 yap
+  if (categoryNoteCounts[note.categoryId] < 0) categoryNoteCounts[note.categoryId] = 0;
+};
+
+// Kategori ağacında yukarı doğru giderek tüm üst kategorilerin not sayısını hesapla
+const calculateParentNoteCounts = (categories) => {
+  const getParentNoteCount = (categoryId) => {
+    const category = categories.find(c => c.id === categoryId);
+    if (!category) return 0;
+
+    const directNoteCount = categoryNoteCounts[categoryId] || 0;
+    const childCategories = categories.filter(c => c.parentId === categoryId);
+    const childNoteCount = childCategories.reduce((sum, child) => 
+      sum + getParentNoteCount(child.id), 0);
+
+    categoryNoteCounts[categoryId] = directNoteCount + childNoteCount;
+    return categoryNoteCounts[categoryId];
+  };
+
+  // Kök kategorilerden başlayarak hesapla
+  categories
+    .filter(cat => !cat.parentId)
+    .forEach(rootCat => getParentNoteCount(rootCat.id));
+};
 
 export const loadCategories = async () => {
   try {
+    // Kategorileri yükle
     const q = query(
       collection(db, 'categories'),
       orderBy('createdAt', 'asc')
@@ -16,6 +50,21 @@ export const loadCategories = async () => {
       updatedAt: doc.data().updatedAt?.toDate()
     }));
 
+    // Tüm notları bir kerede yükle
+    const notesSnapshot = await getDocs(collection(db, 'notes'));
+    
+    // Not sayılarını sıfırla ve yeniden hesapla
+    categoryNoteCounts = {};
+    notesSnapshot.docs.forEach(doc => {
+      const note = doc.data();
+      if (note.categoryId) {
+        categoryNoteCounts[note.categoryId] = (categoryNoteCounts[note.categoryId] || 0) + 1;
+      }
+    });
+
+    // Üst kategorilerin not sayılarını hesapla
+    calculateParentNoteCounts(categoriesData);
+
     // Kategorileri ağaç yapısına dönüştür
     const buildTree = (categories, parentId = null) => {
       return categories
@@ -27,6 +76,7 @@ export const loadCategories = async () => {
         })
         .map(cat => ({
           ...cat,
+          noteCount: categoryNoteCounts[cat.id] || 0,
           children: buildTree(categories, cat.id)
         }));
     };

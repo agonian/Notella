@@ -1,202 +1,296 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
-  Text,
   TextInput,
-  TouchableOpacity,
+  Switch,
   StyleSheet,
-  ActivityIndicator,
+  Text,
+  TouchableOpacity,
   Modal,
   ScrollView,
+  Dimensions,
+  FlatList,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 
 const AVAILABLE_ICONS = [
-  { name: 'folder', label: 'Klasör' },
-  { name: 'school', label: 'Okul' },
-  { name: 'book', label: 'Kitap' },
-  { name: 'description', label: 'Not' },
-  { name: 'library-books', label: 'Kütüphane' },
-  { name: 'assignment', label: 'Ödev' },
-  { name: 'class', label: 'Sınıf' },
-  { name: 'subject', label: 'Konu' },
-  { name: 'category', label: 'Kategori' },
-  { name: 'bookmark', label: 'Yer İmi' },
-  { name: 'lightbulb', label: 'Fikir' },
-  { name: 'psychology', label: 'Psikoloji' },
-  { name: 'science', label: 'Bilim' },
-  { name: 'calculate', label: 'Matematik' },
-  { name: 'language', label: 'Dil' },
+  { name: 'folder', label: 'Klasör', category: 'Genel' },
+  { name: 'folder-open', label: 'Açık Klasör', category: 'Genel' },
+  { name: 'folder-shared', label: 'Paylaşılan Klasör', category: 'Genel' },
+  { name: 'create-new-folder', label: 'Yeni Klasör', category: 'Genel' },
+  { name: 'school', label: 'Okul', category: 'Eğitim' },
+  { name: 'book', label: 'Kitap', category: 'Eğitim' },
+  { name: 'library-books', label: 'Kütüphane', category: 'Eğitim' },
+  { name: 'assignment', label: 'Ödev', category: 'Eğitim' },
+  { name: 'class', label: 'Sınıf', category: 'Eğitim' },
+  { name: 'description', label: 'Not', category: 'İçerik' },
+  { name: 'article', label: 'Makale', category: 'İçerik' },
+  { name: 'subject', label: 'Konu', category: 'İçerik' },
+  { name: 'category', label: 'Kategori', category: 'İçerik' },
+  { name: 'bookmark', label: 'Yer İmi', category: 'İçerik' },
+  { name: 'lightbulb', label: 'Fikir', category: 'Bilim' },
+  { name: 'psychology', label: 'Psikoloji', category: 'Bilim' },
+  { name: 'science', label: 'Bilim', category: 'Bilim' },
+  { name: 'biotech', label: 'Biyoloji', category: 'Bilim' },
+  { name: 'calculate', label: 'Matematik', category: 'Bilim' },
+  { name: 'language', label: 'Dil', category: 'Dil' },
+  { name: 'translate', label: 'Çeviri', category: 'Dil' },
+  { name: 'menu-book', label: 'Sözlük', category: 'Dil' },
 ];
 
-export default function CategoryForm({ 
-  visible, 
-  onClose, 
-  loading, 
-  categoryForm, 
-  setCategoryForm, 
-  onSubmit, 
-  isEditing 
-}) {
+const CategoryForm = ({
+  form,
+  setForm,
+  onSubmit,
+  onClose,
+  isEditing,
+}) => {
   const [showIconPicker, setShowIconPicker] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('Tümü');
+
+  const categories = useMemo(() => {
+    const cats = ['Tümü', ...new Set(AVAILABLE_ICONS.map(icon => icon.category))];
+    return cats;
+  }, []);
+
+  const filteredIcons = useMemo(() => {
+    let icons = AVAILABLE_ICONS;
+    
+    if (selectedCategory !== 'Tümü') {
+      icons = icons.filter(icon => icon.category === selectedCategory);
+    }
+    
+    if (searchText) {
+      const searchLower = searchText.toLowerCase();
+      icons = icons.filter(icon => 
+        icon.label.toLowerCase().includes(searchLower) ||
+        icon.category.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    return icons;
+  }, [selectedCategory, searchText]);
+
+  const renderIconItem = ({ item }) => (
+    <TouchableOpacity
+      style={[
+        styles.iconItem,
+        form.icon === item.name && styles.selectedIconItem
+      ]}
+      onPress={() => {
+        setForm({ ...form, icon: item.name });
+        setShowIconPicker(false);
+      }}
+    >
+      <MaterialIcons
+        name={item.name}
+        size={32}
+        color={form.icon === item.name ? '#4A90E2' : '#2C3E50'}
+      />
+      <Text style={[
+        styles.iconItemText,
+        form.icon === item.name && styles.selectedIconItemText
+      ]}>
+        {item.label}
+      </Text>
+    </TouchableOpacity>
+  );
 
   return (
-    <Modal
-      visible={visible}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <View style={styles.modalContainer}>
-        <View style={styles.modalContent}>
+    <View style={styles.modalContainer}>
+      <View style={styles.modalContent}>
+        <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>
             {isEditing ? 'Kategori Düzenle' : 'Yeni Kategori'}
           </Text>
-          
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.closeButton}
+          >
+            <MaterialIcons name="close" size={24} color="#E74C3C" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.formContainer}>
           <TextInput
             style={styles.input}
             placeholder="Kategori Adı"
-            value={categoryForm.name}
-            onChangeText={(text) => setCategoryForm(prev => ({ ...prev, name: text }))}
+            value={form.name}
+            onChangeText={(text) => setForm({ ...form, name: text })}
           />
           
           <TextInput
-            style={styles.input}
+            style={[styles.input, styles.descriptionInput]}
             placeholder="Açıklama"
-            value={categoryForm.description}
-            onChangeText={(text) => setCategoryForm(prev => ({ ...prev, description: text }))}
+            value={form.description}
+            onChangeText={(text) => setForm({ ...form, description: text })}
+            multiline
           />
-          
+
           <TouchableOpacity
             style={styles.iconSelector}
             onPress={() => setShowIconPicker(true)}
           >
             <View style={styles.iconDisplay}>
-              <MaterialIcons 
-                name={categoryForm.icon || 'folder'} 
-                size={24} 
-                color="#2C3E50" 
+              <MaterialIcons
+                name={form.icon || 'folder'}
+                size={24}
+                color="#2C3E50"
               />
               <Text style={styles.iconText}>
-                {AVAILABLE_ICONS.find(i => i.name === categoryForm.icon)?.label || 'Klasör'}
+                {AVAILABLE_ICONS.find(i => i.name === form.icon)?.label || 'Klasör'}
               </Text>
             </View>
             <MaterialIcons name="arrow-drop-down" size={24} color="#2C3E50" />
           </TouchableOpacity>
 
           <View style={styles.switchContainer}>
-            <Text style={styles.switchLabel}>Not Eklenebilir</Text>
-            <TouchableOpacity
-              style={[styles.switch, categoryForm.hasNotes && styles.switchActive]}
-              onPress={() => setCategoryForm(prev => ({ ...prev, hasNotes: !prev.hasNotes }))}
-            >
-              <View style={[styles.switchThumb, categoryForm.hasNotes && styles.switchThumbActive]} />
-            </TouchableOpacity>
+            <Text>Not Eklenebilir</Text>
+            <Switch
+              value={form.hasNotes}
+              onValueChange={(value) =>
+                setForm({ ...form, hasNotes: value })
+              }
+            />
           </View>
 
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity 
-              style={[styles.button, styles.cancelButton]} 
-              onPress={onClose}
-            >
-              <Text style={styles.buttonText}>İptal</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.button, styles.submitButton]}
-              onPress={onSubmit}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <Text style={styles.buttonText}>
-                  {isEditing ? 'Güncelle' : 'Ekle'}
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
-
-          <Modal
-            visible={showIconPicker}
-            transparent={true}
-            animationType="fade"
-            onRequestClose={() => setShowIconPicker(false)}
+          <TouchableOpacity
+            style={[
+              styles.submitButton,
+              !form.name.trim() && styles.submitButtonDisabled
+            ]}
+            onPress={onSubmit}
+            disabled={!form.name.trim()}
           >
-            <View style={styles.iconPickerContainer}>
-              <View style={styles.iconPickerContent}>
-                <View style={styles.iconPickerHeader}>
-                  <Text style={styles.iconPickerTitle}>İkon Seç</Text>
-                  <TouchableOpacity 
-                    onPress={() => setShowIconPicker(false)}
-                    style={styles.closeButton}
-                  >
-                    <MaterialIcons name="close" size={24} color="#E74C3C" />
-                  </TouchableOpacity>
-                </View>
-                <ScrollView style={styles.iconList}>
-                  {AVAILABLE_ICONS.map((icon) => (
-                    <TouchableOpacity
-                      key={icon.name}
-                      style={[
-                        styles.iconOption,
-                        categoryForm.icon === icon.name && styles.selectedIconOption
-                      ]}
-                      onPress={() => {
-                        setCategoryForm(prev => ({ ...prev, icon: icon.name }));
-                        setShowIconPicker(false);
-                      }}
-                    >
-                      <MaterialIcons 
-                        name={icon.name} 
-                        size={24} 
-                        color={categoryForm.icon === icon.name ? '#4A90E2' : '#2C3E50'} 
-                      />
-                      <Text style={[
-                        styles.iconOptionText,
-                        categoryForm.icon === icon.name && styles.selectedIconOptionText
-                      ]}>
-                        {icon.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            </View>
-          </Modal>
+            <Text style={styles.submitButtonText}>
+              {isEditing ? 'Güncelle' : 'Ekle'}
+            </Text>
+          </TouchableOpacity>
         </View>
+
+        <Modal
+          visible={showIconPicker}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowIconPicker(false)}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>İkon Seç</Text>
+                <TouchableOpacity
+                  onPress={() => setShowIconPicker(false)}
+                  style={styles.closeButton}
+                >
+                  <MaterialIcons name="close" size={24} color="#E74C3C" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.searchContainer}>
+                <MaterialIcons name="search" size={24} color="#95A5A6" />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="İkon ara..."
+                  value={searchText}
+                  onChangeText={setSearchText}
+                />
+                {searchText ? (
+                  <TouchableOpacity
+                    onPress={() => setSearchText('')}
+                    style={styles.clearSearch}
+                  >
+                    <MaterialIcons name="clear" size={20} color="#95A5A6" />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.categoryList}
+              >
+                {categories.map(category => (
+                  <TouchableOpacity
+                    key={category}
+                    style={[
+                      styles.categoryButton,
+                      selectedCategory === category && styles.selectedCategoryButton
+                    ]}
+                    onPress={() => setSelectedCategory(category)}
+                  >
+                    <Text style={[
+                      styles.categoryButtonText,
+                      selectedCategory === category && styles.selectedCategoryButtonText
+                    ]}>
+                      {category}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <FlatList
+                data={filteredIcons}
+                renderItem={renderIconItem}
+                keyExtractor={item => item.name}
+                numColumns={3}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.iconGrid}
+              />
+            </View>
+          </View>
+        </Modal>
       </View>
-    </Modal>
+    </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalContent: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    padding: 20,
+    borderRadius: 12,
     width: '90%',
     maxWidth: 500,
+    maxHeight: '90%',
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 20,
     color: '#2C3E50',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  formContainer: {
+    padding: 16,
   },
   input: {
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 8,
     padding: 12,
-    marginBottom: 12,
+    marginBottom: 16,
+    backgroundColor: '#FFFFFF',
     fontSize: 16,
+  },
+  descriptionInput: {
+    height: 100,
+    textAlignVertical: 'top',
   },
   iconSelector: {
     flexDirection: 'row',
@@ -206,7 +300,8 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     borderRadius: 8,
     padding: 12,
-    marginBottom: 12,
+    marginBottom: 16,
+    backgroundColor: '#FFFFFF',
   },
   iconDisplay: {
     flexDirection: 'row',
@@ -221,100 +316,87 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
-  },
-  switchLabel: {
-    fontSize: 16,
-    color: '#2C3E50',
-  },
-  switch: {
-    width: 51,
-    height: 31,
-    borderRadius: 15.5,
-    backgroundColor: '#E2E8F0',
-    padding: 2,
-  },
-  switchActive: {
-    backgroundColor: '#4A90E2',
-  },
-  switchThumb: {
-    width: 27,
-    height: 27,
-    borderRadius: 13.5,
-    backgroundColor: '#FFFFFF',
-  },
-  switchThumbActive: {
-    transform: [{ translateX: 20 }],
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 10,
-  },
-  button: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    marginLeft: 10,
-  },
-  cancelButton: {
-    backgroundColor: '#E2E8F0',
+    marginBottom: 24,
   },
   submitButton: {
     backgroundColor: '#4A90E2',
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
   },
-  buttonText: {
+  submitButtonDisabled: {
+    backgroundColor: '#95A5A6',
+  },
+  submitButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '600',
-  },
-  iconPickerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  iconPickerContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    padding: 20,
-    width: '90%',
-    maxHeight: '80%',
-  },
-  iconPickerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  iconPickerTitle: {
-    fontSize: 20,
     fontWeight: 'bold',
-    color: '#2C3E50',
   },
-  closeButton: {
-    padding: 4,
-  },
-  iconList: {
-    maxHeight: 400,
-  },
-  iconOption: {
+  searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
-  selectedIconOption: {
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 16,
+  },
+  clearSearch: {
+    padding: 4,
+  },
+  categoryList: {
+    maxHeight: 60,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  categoryButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginHorizontal: 4,
+    borderRadius: 16,
     backgroundColor: '#F5F6FA',
   },
-  iconOptionText: {
-    marginLeft: 12,
-    fontSize: 16,
+  selectedCategoryButton: {
+    backgroundColor: '#4A90E2',
+  },
+  categoryButtonText: {
     color: '#2C3E50',
+    fontSize: 14,
   },
-  selectedIconOptionText: {
+  selectedCategoryButtonText: {
+    color: '#FFFFFF',
+  },
+  iconGrid: {
+    padding: 8,
+  },
+  iconItem: {
+    flex: 1,
+    aspectRatio: 1,
+    margin: 8,
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#F5F6FA',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedIconItem: {
+    backgroundColor: '#EBF5FF',
+    borderWidth: 2,
+    borderColor: '#4A90E2',
+  },
+  iconItemText: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#2C3E50',
+    textAlign: 'center',
+  },
+  selectedIconItemText: {
     color: '#4A90E2',
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
-}); 
+});
+
+export default CategoryForm; 
